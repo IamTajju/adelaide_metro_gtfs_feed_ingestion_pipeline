@@ -11,6 +11,7 @@ Checks version.txt for changes and only re-downloads when needed.
 """
 
 import io
+import shutil
 import urllib.request
 import zipfile
 
@@ -45,7 +46,8 @@ def download_timetable(version):
     """Downloads and extracts the GTFS static timetable if not already present.
 
     Checks if the timetable version on disk matches the current endpoint version.
-    If not, downloads and extracts the zip into data/timetable/.
+    If not, downloads the zip and replaces data/timetable/ with it, so the folder
+    only ever holds files from one version.
 
     Args:
         version: The timetable version string (e.g. "1700").
@@ -62,14 +64,17 @@ def download_timetable(version):
         if local_version == version:
             return timetable_path
 
-    # Download and extract.
+    # Download fully first, so a failed download leaves the old version in place.
     print("downloading GTFS timetable version %s" % version)
     with urllib.request.urlopen(config.GTFS_STATIC, timeout=60) as resp:
-        with zipfile.ZipFile(io.BytesIO(resp.read())) as zf:
-            zf.extractall(timetable_path)
+        body = resp.read()
+
+    # Clear the old version so no file from it lingers, then extract.
+    shutil.rmtree(timetable_path, ignore_errors=True)
+    with zipfile.ZipFile(io.BytesIO(body)) as zf:
+        zf.extractall(timetable_path)
 
     # Record the version.
-    timetable_path.mkdir(parents=True, exist_ok=True)
     version_file.write_text(version)
     return timetable_path
 
