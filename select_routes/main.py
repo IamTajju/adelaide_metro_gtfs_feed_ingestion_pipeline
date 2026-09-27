@@ -16,8 +16,8 @@ TODO: T03, T04 (see docs/TICKETS.md).
 
 import pandas as pd
 
-import config
-from select_routes.timetable import load_bus_routes, cbd_stop_ids
+from shared import config
+from shared.timetable import base_route, cbd_stop_ids, load_bus_routes
 from select_routes.validations import download_latest_validations
 
 
@@ -37,8 +37,6 @@ def demand_candidates(validations_path):
     v = pd.read_csv(validations_path, encoding="utf-8-sig", dtype=str)
     v = v[v.NUM_MODE_TRANSPORT == config.BUS_MODE]
     v["boardings"] = v.BAND_BOARDINGS_FLOOR.astype(int)
-
-    from select_routes.timetable import base_route
     v["route"] = base_route(v.ROUTE_CODE)
 
     routes = load_bus_routes()

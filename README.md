@@ -13,20 +13,30 @@ Plan: [docs/PROJECT_PLAN.md](docs/PROJECT_PLAN.md) · Tickets: [docs/TICKETS.md]
 
 ## Skeleton
 
+Each stage is a package with a `main.py` driver (`python -m <package>`) and its helpers.
+
 ```
-data_ingestion.py   CLI front door
-config.py           settings
-store.py            SQLite tables
-select_routes.py    Stage 1: demand → candidates → rank → top k
-select_stops.py     Stage 2: top n CBD stops per route, N/S/E/W
-timetable.py        Stage 3: static timetable, version check, scheduled times
-collect.py          Stage 3: polling loop with route + radius filter
-validate.py         Stage 3: rejection layer
-arrivals.py         Stage 3: observed vs scheduled arrival
-anomalies.py        Stage 3: post-collection flags
-weather.py          Stage 4: Open-Meteo hourly
-plots.py            charts and maps
-tests/              tests for validate.py
+data_ingestion.py            CLI front door (calls each stage's main)
+shared/
+  config.py                  settings: URLs, paths, CBD box, k, n, radius, poll interval
+  store.py                   SQLite tables
+  timetable.py               static GTFS download + version check, bus routes, CBD stops
+select_routes/               Stage 1
+  main.py                    demand → candidates → rank → top k
+  validations.py             Metrocard validations download
+  plots.py                   bar chart, route map, rank heatmap
+select_stops/                Stage 2
+  main.py                    top n CBD stops per route, N/S/E/W
+  plots.py                   CBD stop map
+gtfs_position_collection/    Stage 3
+  main.py                    polling loop with route + radius filter
+  scheduled_times.py         scheduled arrivals for chosen trips × stops
+  validate.py                rejection layer
+  arrivals.py                observed vs scheduled arrival
+  anomalies.py               post-collection flags
+weather_collection/          Stage 4
+  main.py                    Open-Meteo hourly
+tests/                       tests for the rejection layer
 ```
 
 ## Setup and run

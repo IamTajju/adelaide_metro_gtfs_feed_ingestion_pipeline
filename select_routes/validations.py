@@ -13,7 +13,7 @@ import json
 import re
 import urllib.request
 
-import config
+from shared import config
 
 
 def download_latest_validations():

@@ -1,9 +1,9 @@
 # Student Name: [Your Name]
 # Student FAN:  [YourFAN]
-# File:         config.py
+# File:         shared/config.py
 # Date:         26-09-2026
 # Description:  All URLs, paths, timers, CBD box and selection sizes.
-# Usage:        imported by other modules
+# Usage:        from shared import config
 """All URLs, paths, timers, CBD box and selection sizes.
 
 TODO: rest of T01 (see docs/TICKETS.md).
@@ -12,7 +12,7 @@ TODO: rest of T01 (see docs/TICKETS.md).
 from pathlib import Path
 
 # Paths
-DATA_DIR = Path(__file__).parent / "data"
+DATA_DIR = Path(__file__).resolve().parent.parent / "data"
 TIMETABLE_DIR = DATA_DIR / "timetable"
 VALIDATIONS_DIR = DATA_DIR / "validations"
 SELECTION_DIR = DATA_DIR / "selection"

@@ -1,9 +1,9 @@
 # Student Name: [Your Name]
 # Student FAN:  [YourFAN]
-# File:         select_routes/timetable.py
+# File:         shared/timetable.py
 # Date:         27-09-2026
 # Description:  Static GTFS timetable download, version management, and route loading.
-# Usage:        from select_routes.timetable import load_bus_routes, cbd_stop_ids
+# Usage:        from shared.timetable import load_bus_routes, cbd_stop_ids
 """Static GTFS timetable download, version management, and route loading.
 
 Manages downloading and caching Adelaide Metro's static timetable.
@@ -16,7 +16,7 @@ import zipfile
 
 import pandas as pd
 
-import config
+from shared import config
 
 
 def base_route(codes):
