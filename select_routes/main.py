@@ -1,5 +1,5 @@
-# Student Name: [Your Name]
-# Student FAN:  [YourFAN]
+# Student Name: Tahzeeb Ahmed
+# Student FAN:  ahme0423
 # File:         select_routes/main.py
 # Date:         27-09-2026
 # Description:  Top-k route selection driver and demand ranking logic.
@@ -40,7 +40,8 @@ def demand_candidates(validations_path):
     v["route"] = base_route(v.ROUTE_CODE)
 
     routes = load_bus_routes()
-    variants = routes.groupby("route").route_id.apply(lambda ids: " ".join(sorted(ids)))
+    variants = routes.groupby("route").route_id.apply(
+        lambda ids: " ".join(sorted(ids)))
 
     # Report codes with no GTFS bus route (special events, substitutes, night buses).
     unmatched = v[~v.route.isin(variants.index)]

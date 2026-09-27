@@ -1,5 +1,5 @@
-# Student Name: [Your Name]
-# Student FAN:  [YourFAN]
+# Student Name: Tahzeeb Ahmed
+# Student FAN:  ahme0423
 # File:         select_routes/validations.py
 # Date:         27-09-2026
 # Description:  Adelaide Metro Metrocard validations data download and parsing.
@@ -27,10 +27,12 @@ def download_latest_validations():
     """
     with urllib.request.urlopen(config.VALIDATIONS_API, timeout=60) as resp:
         resources = json.load(resp)["result"]["resources"]
-    quarterly = [r for r in resources if re.search(r"\d{4} Q[1-4]$", r["name"])]
+    quarterly = [r for r in resources if re.search(
+        r"\d{4} Q[1-4]$", r["name"])]
     newest = max(quarterly, key=lambda r: r["last_modified"])
 
-    path = config.VALIDATIONS_DIR / (newest["name"][-7:].replace(" ", "-").lower() + ".csv")
+    path = config.VALIDATIONS_DIR / \
+        (newest["name"][-7:].replace(" ", "-").lower() + ".csv")
     if not path.exists():
         config.VALIDATIONS_DIR.mkdir(parents=True, exist_ok=True)
         print("downloading %s" % newest["name"])
