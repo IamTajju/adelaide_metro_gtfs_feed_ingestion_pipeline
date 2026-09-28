@@ -21,6 +21,12 @@ shared/
   config.py                  settings: URLs, paths, CBD box, k, n, radius, poll interval
   store.py                   SQLite tables
   timetable.py               static GTFS download + version check, bus routes, CBD stops
+data_collection_setup/        whole feed, unfiltered
+  main.py                    static GTFS + validations quarter → SQLite
+get_gtfs_positions/           one snapshot of live positions
+  main.py                    vehicle_positions feed → data/gtfs_positions.csv
+gtfs_position_collection/     Stage 3
+  main.py                    polling loop → gtfs_positions table (every 15 s)
 select_routes/               Stage 1
   main.py                    demand → candidates → rank → top k
   validations.py             Metrocard validations download
@@ -28,12 +34,6 @@ select_routes/               Stage 1
 select_stops/                Stage 2
   main.py                    top n CBD stops per route, N/S/E/W
   plots.py                   CBD stop map
-gtfs_position_collection/    Stage 3
-  main.py                    polling loop with route + radius filter
-  scheduled_times.py         scheduled arrivals for chosen trips × stops
-  validate.py                rejection layer
-  arrivals.py                observed vs scheduled arrival
-  anomalies.py               post-collection flags
 weather_collection/          Stage 4
   main.py                    Open-Meteo hourly
 tests/                       tests for the rejection layer
@@ -43,6 +43,9 @@ tests/                       tests for the rejection layer
 
 ```bash
 python3 -m venv venv && venv/bin/pip install -r requirements.txt
+venv/bin/python -m data_collection_setup        # load the full GTFS + validations into data/gtfs.db
+venv/bin/python -m get_gtfs_positions           # save one live snapshot to data/gtfs_positions.csv
+venv/bin/python -m gtfs_position_collection     # poll live positions into gtfs_positions (leave running)
 venv/bin/python data_ingestion.py init      # create the database
 venv/bin/python data_ingestion.py select    # choose routes and stops
 venv/bin/python data_ingestion.py collect   # poll live positions (leave running)
