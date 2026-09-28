@@ -39,6 +39,10 @@ shared/
   store.py                   SQLite tables
   timetable.py               static GTFS download + version check, read_gtfs, bus routes, CBD stops,
                              weekday trip counts, route shapes
+data_collection_setup/       whole feed, unfiltered
+  main.py                    static GTFS + metrocard taps quarter → SQLite
+get_gtfs_positions/          one snapshot of live positions
+  main.py                    vehicle_positions feed → data/gtfs_positions.csv
 select_routes/               Stage 1
   main.py                    driver: route candidates CSV + map + bar charts
   candidates.py              rank routes by CBD boardings
@@ -51,7 +55,7 @@ select_stops/                Stage 2
   selection.py               top n stops per route + N/E/S/W quadrant swap → top m stops
   plots.py                   CBD stop map
 gtfs_position_collection/    Stage 3
-  main.py                    polling loop with route + radius filter
+  main.py                    polling loop → gtfs_positions table (every 15 s; route + radius filter TODO)
   scheduled_times.py         scheduled arrivals for chosen trips × stops
   validate.py                rejection layer
   arrivals.py                observed vs scheduled arrival
@@ -65,6 +69,9 @@ tests/                       tests for the rejection layer
 
 ```bash
 python3 -m venv venv && venv/bin/pip install -r requirements.txt
+venv/bin/python -m data_collection_setup        # load the full GTFS + metrocard taps into data/gtfs.db
+venv/bin/python -m get_gtfs_positions           # save one live snapshot to data/gtfs_positions.csv
+venv/bin/python -m gtfs_position_collection     # poll live positions into gtfs_positions (leave running)
 venv/bin/python data_ingestion.py init      # create the database
 venv/bin/python data_ingestion.py select    # choose routes and stops
 venv/bin/python data_ingestion.py collect   # poll live positions (leave running)
