@@ -74,6 +74,20 @@ def test_scheduled_arrival_with_a_missing_time():
     assert arrivals.scheduled_arrival("2026-09-28", None) is None
 
 
+def test_scheduled_arrival_past_midnight():
+    text = arrivals.scheduled_arrival("2026-09-28", "24:15:00")
+    assert text == "2026-09-29 00:15:00"
+
+
+def test_a_stop_the_trip_never_serves_is_dropped():
+    observed = arrivals.closest_arrivals(ping_frame([
+        ("T1", "G10", "2026-09-28", AT_STOP, STOP[2], 100),
+    ]), [STOP])
+    stop_times = pd.DataFrame({
+        "trip_id": ["T2"], "stop_id": ["S1"], "arrival_time": ["08:15:00"]})
+    assert arrivals.add_times(observed, stop_times).empty
+
+
 def test_fill_arrivals_end_to_end(tmp_path):
     conn = sqlite3.connect(tmp_path / "gtfs.db")
     pings = pd.DataFrame({

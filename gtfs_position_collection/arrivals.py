@@ -18,7 +18,7 @@ that is already there, so the table never holds duplicates.
 """
 
 import sqlite3
-from datetime import datetime
+from datetime import date, datetime, timedelta
 from zoneinfo import ZoneInfo
 
 import pandas as pd
@@ -102,6 +102,9 @@ def closest_arrivals(pings, stops, radius_m=filters.STOP_RADIUS_M):
 def scheduled_arrival(service_date, arrival_time):
     """Builds the scheduled arrival text of one stop time.
 
+    GTFS times count from the start of the service day and can pass
+    midnight, so "24:15:00" on 2026-09-28 is 00:15:00 on the 29th.
+
     Args:
         service_date: "YYYY-MM-DD" service day of the trip.
         arrival_time: GTFS "HH:MM:SS" text from the timetable.
@@ -111,7 +114,9 @@ def scheduled_arrival(service_date, arrival_time):
     """
     if not service_date or arrival_time is None or pd.isna(arrival_time):
         return None
-    return "%s %s" % (service_date, arrival_time)
+    hours, minutes, seconds = (int(part) for part in arrival_time.split(":"))
+    day = date.fromisoformat(service_date) + timedelta(days=hours // 24)
+    return "%s %02d:%02d:%02d" % (day, hours % 24, minutes, seconds)
 
 
 def load_stop_times(conn, stops):
@@ -138,6 +143,11 @@ def load_stop_times(conn, stops):
 def add_times(observed, stop_times):
     """Adds the observed and scheduled arrival texts to the picked pings.
 
+    The merge is inner on purpose: a bus can pass within the radius of a
+    chosen stop that its trip never serves, e.g. another route's stop one
+    street over, and such a pairing is not an arrival. Keeping only the
+    trip and stop pairs the timetable knows drops that noise.
+
     Args:
         observed: DataFrame as closest_arrivals returns it.
         stop_times: DataFrame as load_stop_times returns it.
@@ -145,7 +155,7 @@ def add_times(observed, stop_times):
     Returns:
         DataFrame ready for the arrivals table.
     """
-    merged = observed.merge(stop_times, on=["trip_id", "stop_id"], how="left")
+    merged = observed.merge(stop_times, on=["trip_id", "stop_id"], how="inner")
     merged["observed_arrival"] = [
         datetime.fromtimestamp(int(stamp), LOCAL_TZ).strftime("%Y-%m-%d %H:%M:%S")
         for stamp in merged["timestamp"]]
