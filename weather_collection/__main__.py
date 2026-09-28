@@ -1,5 +1,5 @@
-# Student Name: [Your Name]
-# Student FAN:  [YourFAN]
+# Student Name: Saad Albaieji
+# Student FAN:  alba0202
 # File:         weather_collection/__main__.py
 # Date:         27-09-2026
 # Description:  Entry point for running weather_collection as a module.
