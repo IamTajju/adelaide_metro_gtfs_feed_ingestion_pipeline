@@ -13,6 +13,8 @@ from pathlib import Path
 
 # Paths
 DATA_DIR = Path(__file__).resolve().parent.parent / "data"
+DB_PATH = DATA_DIR / "gtfs.db"
+POSITIONS_CSV = DATA_DIR / "gtfs_positions.csv"
 TIMETABLE_DIR = DATA_DIR / "timetable"
 VALIDATIONS_DIR = DATA_DIR / "validations"
 SELECTION_DIR = DATA_DIR / "selection"
@@ -21,6 +23,10 @@ SELECTION_DIR = DATA_DIR / "selection"
 GTFS_BASE = "https://gtfs.adelaidemetro.com.au/v1"
 GTFS_STATIC = GTFS_BASE + "/static/latest/google_transit.zip"
 GTFS_VERSION = GTFS_BASE + "/static/latest/version.txt"
+
+# Real-time: live vehicle positions, polled on a fixed timer.
+LIVE_FEED_URL = GTFS_BASE + "/realtime/vehicle_positions"
+LIVE_POLL_SECONDS = 15
 
 # Demand data: Adelaide Metro banded Metrocard validations (data.sa.gov.au).
 VALIDATIONS_API = ("https://data.sa.gov.au/data/api/3/action/package_show"
