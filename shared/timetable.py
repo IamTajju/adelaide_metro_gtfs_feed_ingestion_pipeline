@@ -105,7 +105,77 @@ def cbd_stop_ids():
     version = get_timetable_version()
     download_timetable(version)
 
-    stops = pd.read_csv(config.TIMETABLE_DIR / "stops.txt", dtype={"stop_id": str})
+    stops = pd.read_csv(config.TIMETABLE_DIR / "stops.txt",
+                        dtype={"stop_id": str})
     in_cbd = (stops.stop_lat.between(config.CBD_SOUTH, config.CBD_NORTH)
               & stops.stop_lon.between(config.CBD_WEST, config.CBD_EAST))
     return set(stops.stop_id[in_cbd])
+
+
+def read_gtfs(source, name):
+    """Reads one GTFS file, all columns as strings.
+
+    Args:
+        source: Path to an extracted timetable folder or to a GTFS zip.
+        name: File name inside it, e.g. "trips.txt".
+
+    Returns:
+        DataFrame of the file.
+    """
+    if source.suffix == ".zip":
+        with zipfile.ZipFile(source) as zf, zf.open(name) as fh:
+            return pd.read_csv(fh, dtype=str, encoding="utf-8-sig")
+    return pd.read_csv(source / name, dtype=str, encoding="utf-8-sig")
+
+
+def trips_on_date(source, day):
+    """Counts bus trips per base route that run on one date.
+
+    A service runs if calendar.txt covers the date and weekday, adjusted by
+    the one-off additions (1) and removals (2) in calendar_dates.txt.
+
+    Args:
+        source: Timetable folder or zip (see read_gtfs).
+        day: datetime.date or pd.Timestamp to count.
+
+    Returns:
+        Series of trip counts indexed by base route.
+    """
+    ymd = day.strftime("%Y%m%d")
+    cal = read_gtfs(source, "calendar.txt")
+    # Filter to services that run on the weekday and cover the date.
+    weekday = day.strftime("%A").lower()  # e.g. "wednesday", a column of calendar.txt
+    runs_that_weekday = cal[weekday] == config.SERVICE_RUNS
+    in_date_range = (cal.start_date <= ymd) & (cal.end_date >= ymd)
+    services = set(cal.service_id[runs_that_weekday & in_date_range])
+
+    exceptions = read_gtfs(source, "calendar_dates.txt")
+    exceptions = exceptions[exceptions.date == ymd]
+    services |= set(exceptions.service_id[exceptions.exception_type == config.SERVICE_ADDED])
+    services -= set(exceptions.service_id[exceptions.exception_type == config.SERVICE_REMOVED])
+
+    routes = read_gtfs(source, "routes.txt")
+    routes = routes[routes.route_type == config.BUS_ROUTE_TYPE]
+    trips = read_gtfs(source, "trips.txt")
+    trips = trips[trips.service_id.isin(services)].merge(
+        routes[["route_id", "route_short_name"]], on="route_id")
+    return trips.groupby(base_route(trips.route_short_name)).size()
+
+
+def weekday_trips(source, start):
+    """Counts weekday bus trips per base route on Wednesdays on or after start date for 4 wednesdays (WEEKDAY_WINDOW_WEEKS).
+
+    Wednesdays are used as a representative weekday (lower chance of being part of public holiday and/or long weekend), and the maximum count across the 4 weeks is returned.
+
+    Args:
+        source: Timetable folder or zip (see read_gtfs).
+        start: datetime.date the window starts on.
+
+    Returns:
+        Series of trip counts indexed by base route.
+    """
+    days = pd.date_range(
+        start, periods=config.WEEKDAY_WINDOW_WEEKS, freq="W-WED")
+    counts = pd.concat([trips_on_date(source, d)
+                       for d in days], axis=1).fillna(0)
+    return counts.max(axis=1).astype(int)

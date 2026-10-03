@@ -9,15 +9,17 @@
 T02: candidate routes by demand (Metrocard boardings at CBD stops).
   - Downloads the latest validations quarter from data.sa.gov.au
   - Fetches and caches the static timetable (checking version.txt for changes)
-  - Ranks candidates and outputs data/selection/candidates.csv
+  - Ranks candidates and outputs data/selection/candidates_<timestamp>.csv
 
 TODO: T03, T04 (see docs/TICKETS.md).
 """
 
+from datetime import date, datetime
+
 import pandas as pd
 
 from shared import config
-from shared.timetable import base_route, cbd_stop_ids, load_bus_routes
+from shared.timetable import base_route, cbd_stop_ids, load_bus_routes, weekday_trips
 from select_routes.validations import download_latest_validations
 
 
@@ -59,9 +61,14 @@ def demand_candidates(validations_path):
 def main():
     """Runs route selection and writes the results to data/selection/."""
     candidates = demand_candidates(download_latest_validations())
+    next_four_bus_service_counts = weekday_trips(config.TIMETABLE_DIR, date.today())
+    candidates["weekday_trips"] = candidates.route.map(next_four_bus_service_counts).fillna(0).astype(int)
     config.SELECTION_DIR.mkdir(parents=True, exist_ok=True)
-    candidates.to_csv(config.SELECTION_DIR / "candidates.csv", index=False)
+    # Timestamped so each run is kept; names sort oldest -> newest.
+    path = config.SELECTION_DIR / ("candidates_%s.csv" % datetime.now().strftime("%Y%m%d-%H%M%S"))
+    candidates.to_csv(path, index=False)
     print(candidates.to_string(index=False))
+    print("wrote %s" % path)
 
 
 if __name__ == "__main__":

@@ -35,6 +35,10 @@ CBD_EAST = 138.6104
 
 # GTFS constants
 BUS_ROUTE_TYPE = "3"  # route_type for bus in GTFS (3=bus, 4=tram, 5=train, etc.)
+SERVICE_RUNS = "1"  # calendar.txt weekday column: service runs that weekday.
+SERVICE_ADDED = "1"  # calendar_dates.txt exception_type: service added on the date.
+SERVICE_REMOVED = "2"  # calendar_dates.txt exception_type: service removed on the date.
 
 # Route selection
 N_CANDIDATES = 15  # Top routes by CBD boardings, ranked further in T04.
+WEEKDAY_WINDOW_WEEKS = 4  # Weekday trips = busiest Wednesday in this many weeks.
