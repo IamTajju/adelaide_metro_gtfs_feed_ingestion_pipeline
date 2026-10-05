@@ -32,6 +32,9 @@ CBD_NORTH = -34.9205
 CBD_SOUTH = -34.9357
 CBD_WEST = 138.5873
 CBD_EAST = 138.6104
+# Victoria Square: centre for route directions (N/E/S/W).
+VICTORIA_SQUARE_LAT = -34.9285
+VICTORIA_SQUARE_LON = 138.6007
 
 # GTFS constants
 BUS_ROUTE_TYPE = "3"  # route_type for bus in GTFS (3=bus, 4=tram, 5=train, etc.)
@@ -42,3 +45,8 @@ SERVICE_REMOVED = "2"  # calendar_dates.txt exception_type: service removed on t
 # Route selection
 N_CANDIDATES = 15  # Top routes by CBD boardings, ranked further in T04.
 WEEKDAY_WINDOW_WEEKS = 4  # Weekday trips = busiest Wednesday in this many weeks.
+K_ROUTES = 5  # Routes kept by the selection.
+# Weighted rank: demand leads, frequency breaks near-ties (weights sum to 1).
+WEIGHT_BOARDINGS = 0.6
+WEIGHT_TRIPS = 0.4
+DIRECTIONS = "NESW"  # Each needs at least one chosen route (needs K_ROUTES >= 4).

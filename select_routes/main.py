@@ -20,6 +20,7 @@ import pandas as pd
 
 from shared import config
 from shared.timetable import base_route, cbd_stop_ids, load_bus_routes, weekday_trips
+from select_routes.plots import route_map
 from select_routes.validations import download_latest_validations
 
 
@@ -65,11 +66,14 @@ def main():
     candidates["weekday_trips"] = candidates.route.map(next_four_bus_service_counts).fillna(0).astype(int)
     config.SELECTION_DIR.mkdir(parents=True, exist_ok=True)
     # Timestamped so each run is kept; names sort oldest -> newest.
-    path = config.SELECTION_DIR / ("candidates_%s.csv" % datetime.now().strftime("%Y%m%d-%H%M%S"))
+    stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+    path = config.SELECTION_DIR / ("candidates_%s.csv" % stamp)
     candidates.to_csv(path, index=False)
     print(candidates.to_string(index=False))
     print("wrote %s" % path)
-
+    map_path = config.SELECTION_DIR / ("route_map_%s.png" % stamp)
+    route_map(path, map_path)
+    print("wrote %s" % map_path)
 
 if __name__ == "__main__":
     main()

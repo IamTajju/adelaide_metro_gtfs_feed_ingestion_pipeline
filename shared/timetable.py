@@ -179,3 +179,28 @@ def weekday_trips(source, start):
     counts = pd.concat([trips_on_date(source, d)
                        for d in days], axis=1).fillna(0)
     return counts.max(axis=1).astype(int)
+
+
+def route_shapes(source, routes):
+    """Picks one shape per base route: the one its trips use most.
+
+    Args:
+        source: Timetable folder or zip (see read_gtfs).
+        routes: Iterable of base route codes.
+
+    Returns:
+        Dict of base route -> DataFrame of shape points (lat, lon) in order.
+    """
+    names = read_gtfs(source, "routes.txt")[["route_id", "route_short_name"]]
+    trips = read_gtfs(source, "trips.txt").merge(names, on="route_id")
+    trips["route"] = base_route(trips.route_short_name)
+    trips = trips[trips.route.isin(routes)]
+    main_shape = trips.groupby("route").shape_id.agg(lambda s: s.mode()[0])
+
+    shapes = read_gtfs(source, "shapes.txt")
+    shapes = shapes[shapes.shape_id.isin(main_shape)]
+    shapes = shapes.astype({"shape_pt_lat": float, "shape_pt_lon": float,
+                            "shape_pt_sequence": int})
+    by_shape = {sid: pts.sort_values("shape_pt_sequence")
+                for sid, pts in shapes.groupby("shape_id")}
+    return {route: by_shape[sid] for route, sid in main_shape.items()}
