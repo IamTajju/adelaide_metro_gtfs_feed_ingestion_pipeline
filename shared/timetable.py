@@ -112,20 +112,21 @@ def cbd_stop_ids():
     return set(stops.stop_id[in_cbd])
 
 
-def read_gtfs(source, name):
+def read_gtfs(source, name, columns=None):
     """Reads one GTFS file, all columns as strings.
 
     Args:
         source: Path to an extracted timetable folder or to a GTFS zip.
         name: File name inside it, e.g. "trips.txt".
+        columns: Optional list of columns to load.
 
     Returns:
         DataFrame of the file.
     """
     if source.suffix == ".zip":
         with zipfile.ZipFile(source) as zf, zf.open(name) as fh:
-            return pd.read_csv(fh, dtype=str, encoding="utf-8-sig")
-    return pd.read_csv(source / name, dtype=str, encoding="utf-8-sig")
+            return pd.read_csv(fh, dtype=str, encoding="utf-8-sig", usecols=columns)
+    return pd.read_csv(source / name, dtype=str, encoding="utf-8-sig", usecols=columns)
 
 
 def count_trips_by_route_on_date(metro_timetable_path, day):

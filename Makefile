@@ -1,12 +1,31 @@
 # Pipeline commands. Run from the repository root.
 PYTHON = venv/bin/python
 
-.PHONY: candidates selection
+.PHONY: help selection route_candidates route_selection stop_candidates stop_selection
 
-# T02: route candidates (top N_CANDIDATES by CBD boardings); map them.
-candidates:
+# Default target: list the commands (plain `make` downloads nothing).
+help:
+	@echo "make selection         run all four steps below in order"
+	@echo "make route_candidates  top N_CANDIDATES routes by CBD boardings + map + bar charts"
+	@echo "make route_selection   top k routes (weighted rank + N/E/S/W coverage) + map"
+	@echo "make stop_candidates   CBD stops of the top k routes, with boardings"
+	@echo "make stop_selection    top n stops per route + quadrant swap + CBD map"
+
+# Stage 1 + 2: routes then stops, in order.
+selection: route_candidates route_selection stop_candidates stop_selection
+
+# Route candidates (top N_CANDIDATES by CBD boardings); route map and bar charts.
+route_candidates:
 	$(PYTHON) -m select_routes
 
 # Pick the top k routes from the latest route candidates (weighted rank + N/E/S/W coverage).
-selection:
+route_selection:
 	$(PYTHON) -m select_routes.selection
+
+# Stop candidates (every CBD stop served by the latest top k routes).
+stop_candidates:
+	$(PYTHON) -m select_stops
+
+# Top n CBD stops per route from the latest stop candidates (+ N/E/S/W quadrant swap).
+stop_selection:
+	$(PYTHON) -m select_stops.selection

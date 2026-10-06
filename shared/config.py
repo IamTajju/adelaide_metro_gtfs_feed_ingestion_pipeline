@@ -56,3 +56,6 @@ WEIGHT_BOARDINGS = 0.6
 WEIGHT_TRIPS = 0.4
 # Each needs at least one chosen route (needs K_ROUTES >= 4).
 DIRECTIONS = "NESW"
+
+# Stop selection
+N_STOPS_PER_ROUTE = 3  # Top stops per chosen route by boardings on that route.

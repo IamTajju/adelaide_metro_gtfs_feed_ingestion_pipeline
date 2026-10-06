@@ -3,7 +3,7 @@
 # File:         select_routes/selection.py
 # Date:         03-10-2026
 # Description:  Picks the top-k routes by weighted rank with N/E/S/W coverage.
-# Usage:        make selection  (or python -m select_routes.selection)
+# Usage:        make route_selection  (or python -m select_routes.selection)
 """Picks the top-k routes by weighted rank with N/E/S/W coverage.
 
 Reads the latest route_candidates CSV and writes data/selection/top_k_routes_<timestamp>.csv

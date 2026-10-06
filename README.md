@@ -11,30 +11,44 @@ weather patterns engine.
 
 Plan: [docs/PROJECT_PLAN.md](docs/PROJECT_PLAN.md) · Tickets: [docs/TICKETS.md](docs/TICKETS.md)
 
-## Skeleton
+## Commands
 
-Each stage is a package with a `main.py` driver (`python -m <package>`) and its helpers.
+`make` lists the commands. `make selection` runs all four steps below in order.
 
 Stage 1 commands:
 
-- `make candidates`: route candidates, the top 15 routes by CBD boardings → `data/selection/route_candidates_<timestamp>.csv` + map
-- `make selection`: final top k routes from the latest route candidates. Score = 0.6 × boardings rank + 0.4 × weekday-trips
+- `make route_candidates`: route candidates, the top 15 routes by CBD boardings → `data/selection/route_candidates_<timestamp>.csv` + route map + bar charts
+- `make route_selection`: final top k routes from the latest route candidates. Score = 0.6 × boardings rank + 0.4 × weekday-trips
   rank (lower is better). The best route heading N, E, S and W from Victoria Square is taken first, then the
   rest by score → `data/selection/top_k_routes_<timestamp>.csv` + map
+
+Stage 2 commands:
+
+- `make stop_candidates`: every CBD stop served by the latest top k routes, with its boardings on that route → `data/selection/stop_candidates_<timestamp>.csv`
+- `make stop_selection`: top 3 stops per route by boardings, tagged N/E/S/W from Victoria Square; a missing quadrant's best
+  stop replaces its route's lowest pick → `data/selection/top_m_stops_<timestamp>.csv` + CBD map
+
+## Skeleton
+
+Each stage is a package with a `main.py` driver (`python -m <package>`) and its helpers.
 
 ```
 data_ingestion.py            CLI front door (calls each stage's main)
 shared/
   config.py                  settings: URLs, paths, CBD box, k, n, radius, poll interval
   store.py                   SQLite tables
-  timetable.py               static GTFS download + version check, bus routes, CBD stops
+  timetable.py               static GTFS download + version check, read_gtfs, bus routes, CBD stops,
+                             weekday trip counts, route shapes
 select_routes/               Stage 1
-  main.py                    demand → route candidates (+ map)
+  main.py                    driver: route candidates CSV + map + bar charts
+  candidates.py              rank routes by CBD boardings
   selection.py               weighted rank + N/E/S/W coverage → top k (+ map)
   validations.py             Metrocard validations download
-  plots.py                   bar chart, route map, rank heatmap
+  plots.py                   route map, boardings + weekday trips bar charts, rank heatmap (TODO)
 select_stops/                Stage 2
-  main.py                    top n CBD stops per route, N/S/E/W
+  main.py                    driver: stop candidates CSV
+  candidates.py              CBD stops served by the top k routes (timetable chain) + boardings
+  selection.py               top n stops per route + N/E/S/W quadrant swap → top m stops
   plots.py                   CBD stop map
 gtfs_position_collection/    Stage 3
   main.py                    polling loop with route + radius filter
