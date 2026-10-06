@@ -14,7 +14,7 @@ from pathlib import Path
 # Paths
 DATA_DIR = Path(__file__).resolve().parent.parent / "data"
 TIMETABLE_DIR = DATA_DIR / "timetable"
-VALIDATIONS_DIR = DATA_DIR / "validations"
+METRO_TAPS_DIR = DATA_DIR / "validations"
 SELECTION_DIR = DATA_DIR / "selection"
 
 # Static GTFS: Adelaide Metro timetables and stop/route data.
@@ -25,7 +25,8 @@ GTFS_VERSION = GTFS_BASE + "/static/latest/version.txt"
 # Demand data: Adelaide Metro banded Metrocard validations (data.sa.gov.au).
 VALIDATIONS_API = ("https://data.sa.gov.au/data/api/3/action/package_show"
                    "?id=adelaide-metrocard-validations")
-BUS_MODE = "1"  # NUM_MODE_TRANSPORT: 1=Bus, 4=Tram, 5=Train (dataset metadata).
+# NUM_MODE_TRANSPORT: 1=Bus, 4=Tram, 5=Train (dataset metadata).
+BUS_MODE = "1"
 
 # Adelaide CBD: the box inside North, South, West and East Terraces.
 CBD_NORTH = -34.9205
@@ -37,16 +38,21 @@ VICTORIA_SQUARE_LAT = -34.9285
 VICTORIA_SQUARE_LON = 138.6007
 
 # GTFS constants
-BUS_ROUTE_TYPE = "3"  # route_type for bus in GTFS (3=bus, 4=tram, 5=train, etc.)
+# route_type for bus in GTFS (3=bus, 4=tram, 5=train, etc.)
+BUS_ROUTE_TYPE = "3"
 SERVICE_RUNS = "1"  # calendar.txt weekday column: service runs that weekday.
-SERVICE_ADDED = "1"  # calendar_dates.txt exception_type: service added on the date.
-SERVICE_REMOVED = "2"  # calendar_dates.txt exception_type: service removed on the date.
+# calendar_dates.txt exception_type: service added on the date.
+SERVICE_ADDED = "1"
+# calendar_dates.txt exception_type: service removed on the date.
+SERVICE_REMOVED = "2"
 
 # Route selection
 N_CANDIDATES = 15  # Top routes by CBD boardings, ranked further in T04.
-WEEKDAY_WINDOW_WEEKS = 4  # Weekday trips = busiest Wednesday in this many weeks.
+# Weekday trips = busiest Wednesday in this many weeks.
+WEEKDAY_WINDOW_WEEKS = 4
 K_ROUTES = 5  # Routes kept by the selection.
 # Weighted rank: demand leads, frequency breaks near-ties (weights sum to 1).
 WEIGHT_BOARDINGS = 0.6
 WEIGHT_TRIPS = 0.4
-DIRECTIONS = "NESW"  # Each needs at least one chosen route (needs K_ROUTES >= 4).
+# Each needs at least one chosen route (needs K_ROUTES >= 4).
+DIRECTIONS = "NESW"

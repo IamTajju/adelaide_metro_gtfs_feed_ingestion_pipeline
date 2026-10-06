@@ -16,7 +16,7 @@ import numpy as np
 import pandas as pd
 
 from shared import config
-from shared.timetable import route_shapes
+from shared.timetable import get_primary_route_shapes
 from select_routes.plots import latest_candidates, route_map
 
 
@@ -34,7 +34,7 @@ def route_directions(routes, source=config.TIMETABLE_DIR):
         Series of direction letters indexed by base route.
     """
     directions = {}
-    for route, pts in route_shapes(source, routes).items():
+    for route, pts in get_primary_route_shapes(source, routes).items():
         dy = pts.shape_pt_lat.values - config.VICTORIA_SQUARE_LAT
         # Scale longitude so east-west degrees match north-south ones.
         dx = ((pts.shape_pt_lon.values - config.VICTORIA_SQUARE_LON)
@@ -59,8 +59,10 @@ def select_routes(candidates):
         Candidates with rank, score, direction and chosen columns, sorted by score.
     """
     c = candidates.copy()
-    c["boardings_rank"] = c.cbd_boardings.rank(ascending=False, method="min").astype(int)
-    c["trips_rank"] = c.weekday_trips.rank(ascending=False, method="min").astype(int)
+    c["boardings_rank"] = c.cbd_boardings.rank(
+        ascending=False, method="min").astype(int)
+    c["trips_rank"] = c.weekday_trips.rank(
+        ascending=False, method="min").astype(int)
     c["score"] = (config.WEIGHT_BOARDINGS * c.boardings_rank
                   + config.WEIGHT_TRIPS * c.trips_rank).round(2)
     c["direction"] = c.route.map(route_directions(c.route))
@@ -68,10 +70,12 @@ def select_routes(candidates):
 
     missing = set(config.DIRECTIONS) - set(c.direction)
     if missing:
-        print("no candidate heads %s; coverage is partial" % " ".join(sorted(missing)))
+        print("no candidate heads %s; coverage is partial" %
+              " ".join(sorted(missing)))
     best_per_direction = c.groupby("direction").head(1).index
     rest = c.index.difference(best_per_direction, sort=False)
-    chosen = list(best_per_direction) + list(rest[:config.K_ROUTES - len(best_per_direction)])
+    chosen = list(best_per_direction) + \
+        list(rest[:config.K_ROUTES - len(best_per_direction)])
     c["chosen"] = c.index.isin(chosen)
     return c
 

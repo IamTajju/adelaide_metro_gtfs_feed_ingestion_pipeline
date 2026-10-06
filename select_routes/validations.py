@@ -16,8 +16,8 @@ import urllib.request
 from shared import config
 
 
-def download_latest_validations():
-    """Downloads the newest quarterly validations CSV, unless already on disk.
+def download_latest_quaterly_metro_taps_data():
+    """Downloads the newest quarterly metro taps CSV, unless already on disk.
 
     Uses the CKAN API to find the most recent quarterly resource by last_modified timestamp,
     downloads it if not already cached locally.
@@ -31,10 +31,10 @@ def download_latest_validations():
         r"\d{4} Q[1-4]$", r["name"])]
     newest = max(quarterly, key=lambda r: r["last_modified"])
 
-    path = config.VALIDATIONS_DIR / \
+    path = config.METRO_TAPS_DIR / \
         (newest["name"][-7:].replace(" ", "-").lower() + ".csv")
     if not path.exists():
-        config.VALIDATIONS_DIR.mkdir(parents=True, exist_ok=True)
+        config.METRO_TAPS_DIR.mkdir(parents=True, exist_ok=True)
         print("downloading %s" % newest["name"])
         urllib.request.urlretrieve(newest["url"], path)
     return path

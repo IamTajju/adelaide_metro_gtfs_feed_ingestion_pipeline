@@ -20,16 +20,16 @@ import pandas as pd
 from shared import config
 
 
-def base_route(codes):
+def strip_route_variants(route_codes):
     """Strips variant suffixes from route codes, e.g. "300H" -> "300".
 
     Args:
-        codes: pandas Series of route codes.
+        route_codes: pandas Series of route codes.
 
     Returns:
         Series of base codes (leading letters + digits), NaN if none.
     """
-    return codes.str.extract(r"^([A-Z]*\d+)", expand=False)
+    return route_codes.str.extract(r"^([A-Z]*\d+)", expand=False)
 
 
 def get_timetable_version():
@@ -93,7 +93,7 @@ def load_bus_routes():
 
     routes = pd.read_csv(config.TIMETABLE_DIR / "routes.txt", dtype=str)
     routes = routes[routes.route_type == config.BUS_ROUTE_TYPE]
-    routes["route"] = base_route(routes.route_short_name)
+    routes["route"] = strip_route_variants(routes.route_short_name)
     return routes
 
 
@@ -128,76 +128,82 @@ def read_gtfs(source, name):
     return pd.read_csv(source / name, dtype=str, encoding="utf-8-sig")
 
 
-def trips_on_date(source, day):
+def count_trips_by_route_on_date(metro_timetable_path, day):
     """Counts bus trips per base route that run on one date.
 
     A service runs if calendar.txt covers the date and weekday, adjusted by
     the one-off additions (1) and removals (2) in calendar_dates.txt.
 
     Args:
-        source: Timetable folder or zip (see read_gtfs).
+        metro_timetable_path: Path to the timetable folder or zip (see read_gtfs).
         day: datetime.date or pd.Timestamp to count.
 
     Returns:
         Series of trip counts indexed by base route.
     """
     ymd = day.strftime("%Y%m%d")
-    cal = read_gtfs(source, "calendar.txt")
+    cal = read_gtfs(metro_timetable_path, "calendar.txt")
     # Filter to services that run on the weekday and cover the date.
-    weekday = day.strftime("%A").lower()  # e.g. "wednesday", a column of calendar.txt
+    weekday = day.strftime("%A").lower()
     runs_that_weekday = cal[weekday] == config.SERVICE_RUNS
     in_date_range = (cal.start_date <= ymd) & (cal.end_date >= ymd)
     services = set(cal.service_id[runs_that_weekday & in_date_range])
 
-    exceptions = read_gtfs(source, "calendar_dates.txt")
+    # Check for exceptions on that date (added or removed services).
+    exceptions = read_gtfs(metro_timetable_path, "calendar_dates.txt")
     exceptions = exceptions[exceptions.date == ymd]
-    services |= set(exceptions.service_id[exceptions.exception_type == config.SERVICE_ADDED])
-    services -= set(exceptions.service_id[exceptions.exception_type == config.SERVICE_REMOVED])
+    services |= set(
+        exceptions.service_id[exceptions.exception_type == config.SERVICE_ADDED])
+    services -= set(
+        exceptions.service_id[exceptions.exception_type == config.SERVICE_REMOVED])
 
-    routes = read_gtfs(source, "routes.txt")
+    # Count trips for those services, grouped by base route.
+    routes = read_gtfs(metro_timetable_path, "routes.txt")
     routes = routes[routes.route_type == config.BUS_ROUTE_TYPE]
-    trips = read_gtfs(source, "trips.txt")
+    trips = read_gtfs(metro_timetable_path, "trips.txt")
     trips = trips[trips.service_id.isin(services)].merge(
         routes[["route_id", "route_short_name"]], on="route_id")
-    return trips.groupby(base_route(trips.route_short_name)).size()
+    return trips.groupby(strip_route_variants(trips.route_short_name)).size()
 
 
-def weekday_trips(source, start):
+def count_peak_weekday_trips_by_route(metro_timetable_path, window_start_date):
     """Counts weekday bus trips per base route on Wednesdays on or after start date for 4 wednesdays (WEEKDAY_WINDOW_WEEKS).
 
     Wednesdays are used as a representative weekday (lower chance of being part of public holiday and/or long weekend), and the maximum count across the 4 weeks is returned.
 
     Args:
-        source: Timetable folder or zip (see read_gtfs).
-        start: datetime.date the window starts on.
+        metro_timetable_path: Path to the timetable folder or zip.
+        window_start_date: datetime.date the window starts on.
 
     Returns:
         Series of trip counts indexed by base route.
     """
     days = pd.date_range(
-        start, periods=config.WEEKDAY_WINDOW_WEEKS, freq="W-WED")
-    counts = pd.concat([trips_on_date(source, d)
-                       for d in days], axis=1).fillna(0)
+        window_start_date, periods=config.WEEKDAY_WINDOW_WEEKS, freq="W-WED")
+    counts = pd.concat([count_trips_by_route_on_date(metro_timetable_path, day)
+                       for day in days], axis=1).fillna(0)
     return counts.max(axis=1).astype(int)
 
 
-def route_shapes(source, routes):
+def get_primary_route_shapes(metro_timetable_path, routes):
     """Picks one shape per base route: the one its trips use most.
 
     Args:
-        source: Timetable folder or zip (see read_gtfs).
+        metro_timetable_path: Path to the timetable folder or zip.
         routes: Iterable of base route codes.
 
     Returns:
         Dict of base route -> DataFrame of shape points (lat, lon) in order.
     """
-    names = read_gtfs(source, "routes.txt")[["route_id", "route_short_name"]]
-    trips = read_gtfs(source, "trips.txt").merge(names, on="route_id")
-    trips["route"] = base_route(trips.route_short_name)
+    names = read_gtfs(metro_timetable_path, "routes.txt")[
+        ["route_id", "route_short_name"]]
+    trips = read_gtfs(metro_timetable_path, "trips.txt").merge(
+        names, on="route_id")
+    trips["route"] = strip_route_variants(trips.route_short_name)
     trips = trips[trips.route.isin(routes)]
     main_shape = trips.groupby("route").shape_id.agg(lambda s: s.mode()[0])
 
-    shapes = read_gtfs(source, "shapes.txt")
+    shapes = read_gtfs(metro_timetable_path, "shapes.txt")
     shapes = shapes[shapes.shape_id.isin(main_shape)]
     shapes = shapes.astype({"shape_pt_lat": float, "shape_pt_lon": float,
                             "shape_pt_sequence": int})
