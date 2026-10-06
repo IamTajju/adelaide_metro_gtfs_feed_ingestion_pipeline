@@ -11,15 +11,16 @@
       routes    - the selected routes: demand, timetable, ranks, score and direction
       stops     - the chosen stops per route: boardings, quadrant and rank
       positions - the live vehicle pings collected by the polling loop
-  - An existing gtfs.db is kept as it is; nothing is dropped.
+  - Deletes any previous data/gtfs.db (with its -wal and -shm sidecars) first, so
+    every run starts from an empty database holding only these three tables.
 
 Relationships (one-to-many; no junction tables needed):
   routes 1 --- n stops     stops.route  -> routes.route, NOT NULL: every stop row
                             belongs to exactly one route (a physical stop may still
                             be chosen by two routes, so the key is (route, stop_id)).
-  routes 1 --- n positions positions.route -> routes.route: a ping belongs to at most
-                            one route; trip_route_id keeps the raw GTFS id (which may
-                            be a variant such as "G10A"), route holds the base code.
+  routes 1 --- n positions positions.trip_route_id -> routes.route: a ping belongs
+                            to at most one route, and trip_route_id already carries
+                            that route code.
 
 Writers should run "PRAGMA foreign_keys = ON" on their connection, SQLite only
 enforces foreign keys per connection.
@@ -66,9 +67,8 @@ CREATE TABLE IF NOT EXISTS stops (
 """
 
 # Live vehicle pings: one row per polled vehicle entity per fetch.
-# route is the base route code (trip_route_id with the variant suffix stripped,
-# see shared/timetable.py strip_route_variants); it is NULL for pings that do not
-# belong to a chosen route, so those rows still insert under a foreign key.
+# trip_route_id is the route of the ping, so it doubles as the foreign key into
+# routes; it is left NULLable for pings that do not belong to a chosen route.
 POSITIONS_DDL = """
 CREATE TABLE IF NOT EXISTS positions (
     entity_id                  TEXT,
@@ -78,13 +78,12 @@ CREATE TABLE IF NOT EXISTS positions (
     position_speed             REAL,
     timestamp                  INTEGER,
     trip_direction_id          INTEGER,
-    trip_route_id              TEXT,
+    trip_route_id              TEXT REFERENCES routes(route),
     trip_schedule_relationship TEXT,
     trip_start_date            TEXT,
     trip_trip_id               TEXT,
     vehicle_id                 TEXT,
-    vehicle_label              TEXT,
-    route                      TEXT REFERENCES routes(route)
+    vehicle_label              TEXT
 )
 """
 
@@ -92,20 +91,39 @@ POSITIONS_TIMESTAMP_INDEX = (
     "CREATE INDEX IF NOT EXISTS idx_positions_timestamp ON positions (timestamp)")
 
 POSITIONS_ROUTE_INDEX = (
-    "CREATE INDEX IF NOT EXISTS idx_positions_route ON positions (route)")
+    "CREATE INDEX IF NOT EXISTS idx_positions_trip_route_id ON positions (trip_route_id)")
+
+
+def delete_database(db_path=DB_PATH):
+    """Deletes db_path and its write-ahead log sidecars, if they exist.
+
+    Args:
+        db_path: Path of the SQLite file to delete.
+
+    Returns:
+        bool: True if a file was removed, False otherwise.
+    """
+    removed = False
+    for path in (db_path, Path(str(db_path) + "-wal"), Path(str(db_path) + "-shm")):
+        path = Path(path)
+        if path.exists():
+            path.unlink()
+            removed = True
+    return removed
 
 
 def create_database(db_path=DB_PATH):
-    """Creates db_path and the routes, stops and positions tables if missing.
+    """Deletes db_path if it exists, then creates it with the three pipeline tables.
 
     Args:
-        db_path: Path of the SQLite file to create.
+        db_path: Path of the SQLite file to (re)create.
 
     Returns:
         Path: the path of the database file.
     """
     db_path = Path(db_path)
     db_path.parent.mkdir(parents=True, exist_ok=True)
+    delete_database(db_path)
     with sqlite3.connect(db_path) as conn:
         conn.execute(ROUTES_DDL)
         conn.execute(STOPS_DDL)
@@ -116,13 +134,14 @@ def create_database(db_path=DB_PATH):
 
 
 def main():
-    """Creates data/gtfs.db with the three pipeline tables and lists them."""
+    """Recreates data/gtfs.db with the three pipeline tables and lists them."""
+    replaced = DB_PATH.exists()
     db_path = create_database()
     with sqlite3.connect(db_path) as conn:
         tables = [row[0] for row in conn.execute(
             "SELECT name FROM sqlite_master WHERE type = 'table' AND name IN "
             "('routes', 'stops', 'positions') ORDER BY name")]
-    print("created %s" % db_path)
+    print("%s %s" % ("recreated" if replaced else "created", db_path))
     print("tables: %s" % ", ".join(tables))
 
 
