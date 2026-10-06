@@ -6,7 +6,8 @@
 # Usage:        from select_routes import main
 """Stage 1: top-k route selection from demand and timetable data."""
 
-from select_routes.main import main, rank_routes_by_cbd_boardings
+from select_routes.candidates import rank_routes_by_cbd_boardings
+from select_routes.main import main
 from select_routes.validations import download_latest_quaterly_metro_taps_data
 
 __all__ = [
