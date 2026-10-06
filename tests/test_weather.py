@@ -44,9 +44,9 @@ def test_store_rows_can_run_twice(tmp_path):
 
 def test_collection_hours_come_from_the_pings(tmp_path):
     conn = sqlite3.connect(tmp_path / "gtfs.db")
-    conn.execute("CREATE TABLE gtfs_positions (timestamp INTEGER)")
+    conn.execute("CREATE TABLE positions (timestamp INTEGER)")
     stamp = datetime(2026, 9, 28, 9, 30, tzinfo=LOCAL_TZ).timestamp()
-    conn.execute("INSERT INTO gtfs_positions VALUES (?)", (int(stamp),))
+    conn.execute("INSERT INTO positions VALUES (?)", (int(stamp),))
     conn.commit()
     assert collection_hours(conn, date(2026, 9, 28)) == {"2026-09-28T09:00"}
 
@@ -58,6 +58,6 @@ def test_collection_hours_without_the_table(tmp_path):
 
 def test_collection_hours_on_a_day_without_pings(tmp_path):
     conn = sqlite3.connect(tmp_path / "gtfs.db")
-    conn.execute("CREATE TABLE gtfs_positions (timestamp INTEGER)")
+    conn.execute("CREATE TABLE positions (timestamp INTEGER)")
     conn.commit()
     assert collection_hours(conn, date(2026, 9, 28)) is None
