@@ -93,18 +93,17 @@ def test_fill_arrivals_end_to_end(tmp_path):
     pings = pd.DataFrame({
         "entity_id": ["V1", "V1"],
         "trip_trip_id": ["T1", "T1"],
-        "trip_route_id": ["G10", "G10"],
+        "trip_route_id": ["G10A", "G10A"],
         "trip_start_date": ["20260928", "20260928"],
         "position_latitude": [APPROACHING, AT_STOP],
         "position_longitude": [STOP[2], STOP[2]],
         "timestamp": [1790579700, 1790579730],
     })
-    pings.to_sql("gtfs_positions", conn, index=False)
+    pings.to_sql("positions", conn, index=False)
     stop_times = pd.DataFrame({
         "trip_id": ["T1"], "stop_id": ["S1"], "arrival_time": ["08:15:00"]})
-    stop_times.to_sql("gtfs_stop_times", conn, index=False)
 
-    written = arrivals.fill_arrivals(conn, {"G10"}, [STOP])
+    written = arrivals.fill_arrivals(conn, {"G10"}, [STOP], stop_times)
     assert written == 1
     row = conn.execute(
         "SELECT trip_id, stop_id, service_date, route_id, scheduled_arrival "
@@ -112,5 +111,5 @@ def test_fill_arrivals_end_to_end(tmp_path):
     assert row == ("T1", "S1", "2026-09-28", "G10", "2026-09-28 08:15:00")
 
     # A second run replaces the row instead of duplicating it.
-    assert arrivals.fill_arrivals(conn, {"G10"}, [STOP]) == 1
+    assert arrivals.fill_arrivals(conn, {"G10"}, [STOP], stop_times) == 1
     assert conn.execute("SELECT COUNT(*) FROM arrivals").fetchone()[0] == 1

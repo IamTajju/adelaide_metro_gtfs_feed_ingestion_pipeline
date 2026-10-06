@@ -7,6 +7,7 @@
 """Tests for the route and stop relevance filters."""
 
 import math
+import sqlite3
 
 import pytest
 
@@ -77,12 +78,30 @@ def test_drops_a_row_without_a_position():
     assert filters.keep_relevant(rows, {"G10"}, STOPS) == []
 
 
-def test_load_selection_reads_both_files(tmp_path):
-    routes_csv = tmp_path / "routes.csv"
-    routes_csv.write_text("route_id\nG10\nJ1\n", encoding="utf-8")
-    stops_csv = tmp_path / "stops.csv"
-    stops_csv.write_text("stop_id,stop_lat,stop_lon\nS1,-34.9285,138.6007\n",
-                         encoding="utf-8")
-    route_ids, stops = filters.load_selection(routes_csv, stops_csv)
+def test_base_route_strips_the_variant_suffix():
+    assert filters.base_route("G10A") == "G10"
+    assert filters.base_route("300H") == "300"
+    assert filters.base_route("J1") == "J1"
+    assert filters.base_route(None) is None
+
+
+def test_keeps_a_variant_of_a_chosen_route():
+    rows = [ping("G10A", *NEAR)]
+    assert filters.keep_relevant(rows, {"G10"}, STOPS) == rows
+
+
+def test_load_selection_reads_the_tables(tmp_path):
+    conn = sqlite3.connect(tmp_path / "gtfs.db")
+    conn.execute("CREATE TABLE routes (route TEXT PRIMARY KEY)")
+    conn.execute("CREATE TABLE stops (route TEXT, stop_id TEXT, "
+                 "stop_lat REAL, stop_lon REAL)")
+    conn.execute("INSERT INTO routes VALUES ('G10'), ('J1')")
+    conn.executemany("INSERT INTO stops VALUES (?, ?, ?, ?)", [
+        ("G10", "S1", -34.9285, 138.6007),
+        ("J1", "S1", -34.9285, 138.6007),
+        ("J1", "S2", -34.9240, 138.6010),
+    ])
+    conn.commit()
+    route_ids, stops = filters.load_selection(conn)
     assert route_ids == {"G10", "J1"}
-    assert stops == [("S1", -34.9285, 138.6007)]
+    assert stops == [("S1", -34.9285, 138.6007), ("S2", -34.9240, 138.6010)]

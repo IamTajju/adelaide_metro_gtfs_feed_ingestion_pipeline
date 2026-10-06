@@ -16,23 +16,34 @@ of at least one chosen stop. That also covers the boundary rule from the
 meeting: a bus that has not yet reached the first chosen stop of its route
 is outside every radius, so nothing of it is recorded.
 
-The chosen routes and stops are the files the selection stages write into
-data/selection: routes.csv with a route_id column, and stops.csv with
-stop_id, stop_lat and stop_lon columns.
+The chosen routes and stops are the routes and stops tables that the
+selection stages fill in the project database. The feed reports variant
+codes such as "G10A", those are matched on their base code.
 """
 
-import csv
 import math
-
-from shared import config
+import re
 
 # A bus counts as "at" a stop when it is inside this circle around it.
 STOP_RADIUS_M = 500.0
 
 EARTH_RADIUS_M = 6371000.0
 
-ROUTES_CSV = config.SELECTION_DIR / "routes.csv"
-STOPS_CSV = config.SELECTION_DIR / "stops.csv"
+
+def base_route(code):
+    """Strips the variant suffix of one route code, e.g. "G10A" -> "G10".
+
+    Args:
+        code: Route code text from the feed, or None.
+
+    Returns:
+        The base code (leading letters plus digits), or None when there is
+        no usable code.
+    """
+    if not code:
+        return None
+    match = re.match(r"^([A-Z]*\d+)", str(code))
+    return match.group(1) if match else None
 
 
 def haversine(lat1, lon1, lat2, lon2):
@@ -91,7 +102,9 @@ def is_relevant(row, route_ids, stops, radius_m=STOP_RADIUS_M):
     """
     lat = row.get("position_latitude")
     lon = row.get("position_longitude")
-    if row.get("trip_route_id") not in route_ids or lat is None or lon is None:
+    if base_route(row.get("trip_route_id")) not in route_ids:
+        return False
+    if lat is None or lon is None:
         return False
     return nearest_stop(lat, lon, stops)[1] <= radius_m
 
@@ -111,26 +124,27 @@ def keep_relevant(rows, route_ids, stops, radius_m=STOP_RADIUS_M):
     return [row for row in rows if is_relevant(row, route_ids, stops, radius_m)]
 
 
-def load_selection(routes_csv=None, stops_csv=None):
-    """Reads the chosen routes and stops written by the selection stages.
+def load_selection(conn):
+    """Reads the chosen routes and stops from the project database.
+
+    The selection stages fill the routes table (one row per chosen route)
+    and the stops table (one row per route and stop). A physical stop that
+    was chosen by two routes appears once in the result.
 
     Args:
-        routes_csv: Optional path to the routes file, data/selection/routes.csv
-            by default.
-        stops_csv: Optional path to the stops file, data/selection/stops.csv
-            by default.
+        conn: Open connection to the project database.
 
     Returns:
-        Tuple of (route_ids, stops) where route_ids is a set of route ids
-        and stops is a list of (stop_id, stop_lat, stop_lon) tuples.
+        Tuple of (route_ids, stops) where route_ids is a set of base route
+        codes and stops is a list of (stop_id, stop_lat, stop_lon) tuples.
     """
-    routes_csv = ROUTES_CSV if routes_csv is None else routes_csv
-    stops_csv = STOPS_CSV if stops_csv is None else stops_csv
-    with open(routes_csv, newline="", encoding="utf-8") as handle:
-        route_ids = {row["route_id"] for row in csv.DictReader(handle)}
+    route_ids = {row[0] for row in conn.execute("SELECT route FROM routes")}
     stops = []
-    with open(stops_csv, newline="", encoding="utf-8") as handle:
-        for row in csv.DictReader(handle):
-            stops.append((row["stop_id"],
-                          float(row["stop_lat"]), float(row["stop_lon"])))
+    seen = set()
+    for stop_id, stop_lat, stop_lon in conn.execute(
+            "SELECT stop_id, stop_lat, stop_lon FROM stops"):
+        if stop_id in seen:
+            continue
+        seen.add(stop_id)
+        stops.append((stop_id, stop_lat, stop_lon))
     return route_ids, stops

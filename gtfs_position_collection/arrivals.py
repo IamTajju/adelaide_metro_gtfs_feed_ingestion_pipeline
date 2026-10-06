@@ -56,12 +56,16 @@ def load_pings(conn, route_ids):
         timestamp columns, service dates normalised to YYYY-MM-DD.
     """
     frame = pd.read_sql_query(
-        "SELECT trip_trip_id AS trip_id, trip_route_id AS route_id, "
+        "SELECT trip_trip_id AS trip_id, trip_route_id, "
         "trip_start_date AS service_date, position_latitude AS lat, "
         "position_longitude AS lon, timestamp "
-        "FROM gtfs_positions", conn)
+        "FROM positions", conn)
     frame = frame.dropna(subset=["trip_id", "lat", "lon", "timestamp"])
+    # The feed reports variants such as "G10A", the selection holds "G10".
+    frame["route_id"] = [filters.base_route(code)
+                         for code in frame["trip_route_id"]]
     frame = frame[frame["route_id"].isin(route_ids)].copy()
+    frame = frame.drop(columns=["trip_route_id"])
     frame["service_date"] = frame["service_date"].astype(str).str.replace(
         r"^(\d{4})(\d{2})(\d{2})$", r"\1-\2-\3", regex=True)
     return frame
@@ -119,23 +123,23 @@ def scheduled_arrival(service_date, arrival_time):
     return "%s %02d:%02d:%02d" % (day, hours % 24, minutes, seconds)
 
 
-def load_stop_times(conn, stops):
-    """Reads the scheduled arrival times of the chosen stops.
+def load_stop_times(stops):
+    """Reads the scheduled times of the chosen stops from the timetable files.
 
-    A trip that loops through the same stop twice keeps its first visit.
+    The static timetable on disk is read directly, so this stage does not
+    depend on a table that another module may not have loaded. A trip that
+    loops through the same stop twice keeps its first visit.
 
     Args:
-        conn: Open connection to the project database.
         stops: List of (stop_id, stop_lat, stop_lon) tuples.
 
     Returns:
         DataFrame with trip_id, stop_id and arrival_time columns.
     """
-    marks = ",".join("?" * len(stops))
-    frame = pd.read_sql_query(
-        "SELECT trip_id, stop_id, arrival_time FROM gtfs_stop_times "
-        "WHERE stop_id IN (%s)" % marks, conn,
-        params=[stop_id for stop_id, _, _ in stops])
+    frame = pd.read_csv(config.TIMETABLE_DIR / "stop_times.txt", dtype=str,
+                        usecols=["trip_id", "stop_id", "arrival_time"])
+    chosen = {stop_id for stop_id, _, _ in stops}
+    frame = frame[frame["stop_id"].isin(chosen)]
     return frame.sort_values("arrival_time").drop_duplicates(
         subset=["trip_id", "stop_id"], keep="first")
 
@@ -186,26 +190,30 @@ def store_arrivals(conn, arrivals):
     return len(rows)
 
 
-def fill_arrivals(conn, route_ids=None, stops=None):
+def fill_arrivals(conn, route_ids=None, stops=None, stop_times=None):
     """Fills the arrivals table from the pings stored so far.
 
     Args:
         conn: Open connection to the project database.
-        route_ids: Optional set of chosen route ids, read from
-            data/selection when not given.
+        route_ids: Optional set of chosen base route codes, read from the
+            routes table when not given.
         stops: Optional list of (stop_id, stop_lat, stop_lon) tuples, read
-            from data/selection when not given.
+            from the stops table when not given.
+        stop_times: Optional DataFrame of scheduled times, read from the
+            timetable files when not given.
 
     Returns:
         Number of arrivals written.
     """
     if route_ids is None or stops is None:
-        route_ids, stops = filters.load_selection()
+        route_ids, stops = filters.load_selection(conn)
     pings = load_pings(conn, route_ids)
     observed = closest_arrivals(pings, stops)
     if observed.empty:
         return 0
-    arrivals = add_times(observed, load_stop_times(conn, stops))
+    if stop_times is None:
+        stop_times = load_stop_times(stops)
+    arrivals = add_times(observed, stop_times)
     return store_arrivals(conn, arrivals)
 
 
