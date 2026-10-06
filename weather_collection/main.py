@@ -11,7 +11,7 @@ of one Adelaide day and stores them in the weather_hourly table of the
 project database. The day is yesterday by default, because the weather is
 fetched the morning after the vehicle positions were collected.
 
-When the day already has pings in gtfs_positions, only the hours of that
+When the day already has pings in the positions table, only the hours of that
 collection window are stored. Without pings the whole day is kept, so the
 table is still fillable before the collector has run.
 
@@ -106,16 +106,16 @@ def collection_hours(conn, day):
 
     Returns:
         Set of "YYYY-MM-DDTHH:00" strings, or None when the database has no
-        gtfs_positions table or no pings on that day.
+        positions table or no pings on that day.
     """
     tables = {name for (name,) in conn.execute(
         "SELECT name FROM sqlite_master WHERE type = 'table'")}
-    if "gtfs_positions" not in tables:
+    if "positions" not in tables:
         return None
     start = datetime(day.year, day.month, day.day, tzinfo=LOCAL_TZ)
     end = start + timedelta(days=1)
     stamps = conn.execute(
-        "SELECT DISTINCT timestamp FROM gtfs_positions "
+        "SELECT DISTINCT timestamp FROM positions "
         "WHERE timestamp >= ? AND timestamp < ?",
         (int(start.timestamp()), int(end.timestamp()))).fetchall()
     if not stamps:
