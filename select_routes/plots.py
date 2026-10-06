@@ -5,8 +5,6 @@
 # Description:  Route charts: candidates bar chart, route map, rank heatmap.
 # Usage:        python -m select_routes.plots  (maps the latest route_candidates CSV)
 """Route charts: candidates bar chart, route map, rank heatmap.
-
-TODO: bar chart and rank heatmap (T04, see docs/TICKETS.md).
 """
 
 from shared.timetable import get_primary_route_shapes
@@ -70,6 +68,39 @@ def draw_route_map(routes_path, path, title="Candidate bus routes",
     ax.set_axis_off()
     ax.set_title(title + ", Adelaide Metro")
     fig.savefig(path, dpi=150, bbox_inches="tight")
+    plt.close(fig)
+
+
+def draw_boardings_and_weekday_trips_bar_charts(route_candidates_path, bar_charts_path):
+    """Draws two bar charts side by side: CBD boardings and weekday trips per route.
+
+    Both charts list the routes in the same order (CSV order, most boardings
+    first), so a route's two bars sit on the same row.
+
+    Args:
+        route_candidates_path: Candidates CSV with columns route, cbd_boardings, weekday_trips.
+        bar_charts_path: Output PNG path.
+    """
+    route_candidates = pd.read_csv(route_candidates_path, dtype={"route": str})
+    route_codes = route_candidates.route
+
+    fig, (boardings_ax, weekday_trips_ax) = plt.subplots(
+        1, 2, figsize=(12, 6), sharey=True)
+    boardings_ax.barh(route_codes, route_candidates.cbd_boardings, color=ROUTE_COLOR)
+    boardings_ax.set_title("CBD boardings (Metrocard taps, lower bound)")
+    boardings_ax.xaxis.set_major_formatter(
+        plt.FuncFormatter(lambda boardings, _: "{:,.0f}".format(boardings)))
+    weekday_trips_ax.barh(route_codes, route_candidates.weekday_trips, color=ROUTE_COLOR)
+    weekday_trips_ax.set_title("Weekday trips (busiest Wednesday, next 4 weeks)")
+
+    boardings_ax.invert_yaxis()  # Most boardings at the top.
+    for chart_ax in (boardings_ax, weekday_trips_ax):
+        chart_ax.grid(axis="x", color="#dddddd", linewidth=0.8)
+        chart_ax.set_axisbelow(True)
+        chart_ax.spines[["top", "right"]].set_visible(False)
+    fig.suptitle("Candidate bus routes, Adelaide Metro")
+    fig.tight_layout()
+    fig.savefig(bar_charts_path, dpi=150, bbox_inches="tight")
     plt.close(fig)
 
 

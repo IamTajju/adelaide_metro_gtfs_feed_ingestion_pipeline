@@ -10,13 +10,14 @@
   - Fetches and caches the static timetable (checking version.txt for changes)
   - Ranks routes and outputs the candidates to data/selection/route_candidates_<timestamp>.csv
   - Draws a route map of the candidates on an Adelaide basemap (data/selection/route_candidates_map_<timestamp>.png).
+  - Draws bar charts of CBD boardings and weekday trips per candidate (data/selection/route_candidates_bar_charts_<timestamp>.png).
 """
 
 from datetime import date, datetime
 import pandas as pd
 from shared import config
 from shared.timetable import strip_route_variants, cbd_stop_ids, load_bus_routes, count_peak_weekday_trips_by_route
-from select_routes.plots import draw_route_map
+from select_routes.plots import draw_boardings_and_weekday_trips_bar_charts, draw_route_map
 from select_routes.validations import download_latest_quaterly_metro_taps_data
 
 
@@ -83,6 +84,11 @@ def main():
     map_path = config.SELECTION_DIR / ("route_candidates_map_%s.png" % stamp)
     draw_route_map(path, map_path, metro_timetable_path=config.TIMETABLE_DIR)
     print("wrote %s" % map_path)
+
+    # Draw bar charts of CBD boardings and weekday trips per candidate route.
+    bar_charts_path = config.SELECTION_DIR / ("route_candidates_bar_charts_%s.png" % stamp)
+    draw_boardings_and_weekday_trips_bar_charts(path, bar_charts_path)
+    print("wrote %s" % bar_charts_path)
 
 
 if __name__ == "__main__":
