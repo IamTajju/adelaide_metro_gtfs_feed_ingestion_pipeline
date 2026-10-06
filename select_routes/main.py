@@ -8,20 +8,20 @@
 """Top-k route selection driver and demand ranking logic.
   - Downloads the latest validations quarter (Demand data of metrocard boardings) from data.sa.gov.au
   - Fetches and caches the static timetable (checking version.txt for changes)
-  - Ranks candidates and outputs data/selection/candidates_<timestamp>.csv
-  - Draws a route map of the candidates on an Adelaide basemap (data/selection/route_map_<timestamp>.png).
+  - Ranks routes and outputs the candidates to data/selection/route_candidates_<timestamp>.csv
+  - Draws a route map of the candidates on an Adelaide basemap (data/selection/route_candidates_map_<timestamp>.png).
 """
 
 from datetime import date, datetime
 import pandas as pd
 from shared import config
 from shared.timetable import strip_route_variants, cbd_stop_ids, load_bus_routes, count_peak_weekday_trips_by_route
-from select_routes.plots import route_map
+from select_routes.plots import draw_route_map
 from select_routes.validations import download_latest_quaterly_metro_taps_data
 
 
 def rank_routes_by_cbd_boardings(metrocard_taps_quarterly_data_path):
-    """Ranks bus routes by boardings at CBD stops and keeps the top N.
+    """Ranks bus routes by boardings at CBD stops and keeps the top N_CANDIDATES.
 
     Boardings are range-based, so BAND_BOARDINGS_FLOOR is summed (a lower bound).
     Variants are merged into their base route; the GTFS route_ids of every
@@ -54,34 +54,34 @@ def rank_routes_by_cbd_boardings(metrocard_taps_quarterly_data_path):
 
     cbd = metrocard_taps_df[metrocard_taps_df.route.isin(
         variant_route_ids_by_base_route.index) & metrocard_taps_df.GTFS_ID.isin(cbd_stop_ids())]
-    top_n_routes_by_cbd_boardings = (cbd.groupby("route").boardings.sum()
-                                     .nlargest(config.N_CANDIDATES).rename("cbd_boardings").reset_index())
-    top_n_routes_by_cbd_boardings["gtfs_route_ids"] = top_n_routes_by_cbd_boardings.route.map(
+    route_candidates = (cbd.groupby("route").boardings.sum()
+                        .nlargest(config.N_CANDIDATES).rename("cbd_boardings").reset_index())
+    route_candidates["gtfs_route_ids"] = route_candidates.route.map(
         variant_route_ids_by_base_route)
-    return top_n_routes_by_cbd_boardings
+    return route_candidates
 
 
 def main():
     """Runs route selection and writes the results to data/selection/."""
-    top_n_routes_by_cbd_boardings = rank_routes_by_cbd_boardings(
+    route_candidates = rank_routes_by_cbd_boardings(
         download_latest_quaterly_metro_taps_data())
     # Count the number of trips per base route on a weekday in the last 4 weeks.
     peak_weekday_trips_by_route = count_peak_weekday_trips_by_route(
         config.TIMETABLE_DIR, date.today())
-    top_n_routes_by_cbd_boardings["weekday_trips"] = top_n_routes_by_cbd_boardings.route.map(
+    route_candidates["weekday_trips"] = route_candidates.route.map(
         peak_weekday_trips_by_route).fillna(0).astype(int)
-    
+
     config.SELECTION_DIR.mkdir(parents=True, exist_ok=True)
     # Timestamped so each run is kept; names sort oldest -> newest.
     stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
-    path = config.SELECTION_DIR / ("candidates_%s.csv" % stamp)
-    top_n_routes_by_cbd_boardings.to_csv(path, index=False)
-    print(top_n_routes_by_cbd_boardings.to_string(index=False))
+    path = config.SELECTION_DIR / ("route_candidates_%s.csv" % stamp)
+    route_candidates.to_csv(path, index=False)
+    print(route_candidates.to_string(index=False))
     print("wrote %s" % path)
-    
-    # Draw a map of the selected routes on an Adelaide basemap.
-    map_path = config.SELECTION_DIR / ("route_map_%s.png" % stamp)
-    route_map(path, map_path)
+
+    # Draw a map of the candidate routes on an Adelaide basemap.
+    map_path = config.SELECTION_DIR / ("route_candidates_map_%s.png" % stamp)
+    draw_route_map(path, map_path, metro_timetable_path=config.TIMETABLE_DIR)
     print("wrote %s" % map_path)
 
 

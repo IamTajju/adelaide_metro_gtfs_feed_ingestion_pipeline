@@ -47,7 +47,7 @@ SERVICE_ADDED = "1"
 SERVICE_REMOVED = "2"
 
 # Route selection
-N_CANDIDATES = 15  # Top routes by CBD boardings, ranked further in T04.
+N_CANDIDATES = 15  # Route candidates: top routes by CBD boardings, narrowed to K_ROUTES by the selection.
 # Weekday trips = busiest Wednesday in this many weeks.
 WEEKDAY_WINDOW_WEEKS = 4
 K_ROUTES = 5  # Routes kept by the selection.

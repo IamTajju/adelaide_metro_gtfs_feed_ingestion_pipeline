@@ -17,10 +17,10 @@ Each stage is a package with a `main.py` driver (`python -m <package>`) and its 
 
 Stage 1 commands:
 
-- `make candidates`: top 15 routes by CBD boardings → `data/selection/candidates_<timestamp>.csv` + map
-- `make selection`: top k from the latest candidates. Score = 0.6 × boardings rank + 0.4 × weekday-trips
+- `make candidates`: route candidates, the top 15 routes by CBD boardings → `data/selection/route_candidates_<timestamp>.csv` + map
+- `make selection`: final top k routes from the latest route candidates. Score = 0.6 × boardings rank + 0.4 × weekday-trips
   rank (lower is better). The best route heading N, E, S and W from Victoria Square is taken first, then the
-  rest by score → `data/selection/routes_<timestamp>.csv` + map
+  rest by score → `data/selection/top_k_routes_<timestamp>.csv` + map
 
 ```
 data_ingestion.py            CLI front door (calls each stage's main)
@@ -29,7 +29,7 @@ shared/
   store.py                   SQLite tables
   timetable.py               static GTFS download + version check, bus routes, CBD stops
 select_routes/               Stage 1
-  main.py                    demand → candidates (+ map)
+  main.py                    demand → route candidates (+ map)
   selection.py               weighted rank + N/E/S/W coverage → top k (+ map)
   validations.py             Metrocard validations download
   plots.py                   bar chart, route map, rank heatmap
