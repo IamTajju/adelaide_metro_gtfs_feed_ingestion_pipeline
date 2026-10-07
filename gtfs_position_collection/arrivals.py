@@ -23,25 +23,11 @@ from zoneinfo import ZoneInfo
 
 import pandas as pd
 
+from data_collection_setup.main import ARRIVALS_DDL
 from gtfs_position_collection import filters
 from shared import config
 
-# The database file every stage of the project shares.
-DB_PATH = config.DATA_DIR / "gtfs.db"
-
 LOCAL_TZ = ZoneInfo("Australia/Adelaide")
-
-
-ARRIVALS_DDL = """CREATE TABLE IF NOT EXISTS arrivals (
-    trip_id TEXT NOT NULL,
-    stop_id TEXT NOT NULL,
-    service_date TEXT NOT NULL,
-    route_id TEXT,
-    observed_arrival TEXT,
-    scheduled_arrival TEXT,
-    distance_m REAL,
-    PRIMARY KEY (trip_id, stop_id, service_date)
-)"""
 
 
 def load_pings(conn, route_ids):
@@ -219,7 +205,7 @@ def fill_arrivals(conn, route_ids=None, stops=None, stop_times=None):
 
 def main():
     """Fills the arrivals table and prints what was stored."""
-    conn = sqlite3.connect(DB_PATH)
+    conn = sqlite3.connect(config.DB_PATH)
     try:
         written = fill_arrivals(conn)
         total = conn.execute("SELECT COUNT(*) FROM arrivals").fetchone()[0]

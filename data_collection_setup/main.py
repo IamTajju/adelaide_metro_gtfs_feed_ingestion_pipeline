@@ -2,15 +2,16 @@
 # Student FAN:  turc0022
 # File:         data_collection_setup/main.py
 # Date:         06-10-2026
-# Description:  Database setup driver: creates data/gtfs.db with routes, stops and positions.
+# Description:  Database setup driver: creates data/gtfs.db with routes, stops, positions and arrivals.
 # Usage:        python -m data_collection_setup [--reset]
-"""Database setup driver: creates data/gtfs.db with routes, stops and positions.
+"""Database setup driver: creates data/gtfs.db with routes, stops, positions and arrivals.
   - Creates data/ if it is missing (shared/config.py)
-  - Creates (or reuses) the SQLite file data/gtfs.db
-  - Creates the three pipeline tables if they do not exist yet:
+  - Creates (or reuses) the SQLite file config.DB_PATH (data/gtfs.db)
+  - Creates the four pipeline tables if they do not exist yet:
       routes    - the selected routes: demand, timetable, ranks, score and direction
       stops     - the chosen stops per route: boardings, quadrant and rank
       positions - the live vehicle pings collected by the polling loop
+      arrivals  - observed (closest ping) vs scheduled arrival per trip, stop and date
   - Re-runs are safe: existing tables and their rows are left untouched.
     --reset deletes data/gtfs.db (with its -wal and -shm sidecars) first, which
     also wipes every collected position; use it only to start a collection over.
@@ -23,9 +24,15 @@ Relationships (one-to-many; no junction tables needed):
                             (e.g. "G10"); trip_route_id keeps the raw GTFS id from the
                             feed, which may be a variant such as "G10A", so it cannot be
                             the foreign key itself.
+  arrivals                  derived from positions + the timetable; route_id holds the
+                            base code, but there is no foreign key, so arrivals collected
+                            under an earlier selection survive a new one.
 
 Writers should run "PRAGMA foreign_keys = ON" on their connection, SQLite only
-enforces foreign keys per connection.
+enforces foreign keys per connection. Replacing the selection therefore has a
+fixed order: delete stops, then routes; insert routes, then stops. Positions
+point at routes too, so a route that already has positions cannot be deleted;
+reset the database (--reset) to start a collection with a new selection.
 """
 
 import argparse
@@ -34,7 +41,7 @@ from pathlib import Path
 
 from shared import config
 
-DB_PATH = config.DATA_DIR / "gtfs.db"
+DB_PATH = config.DB_PATH
 
 # Chosen routes: demand (CBD boardings), timetable (weekday trips), ranks and score.
 # route is the primary key the stops and positions foreign keys point at.
@@ -85,7 +92,7 @@ CREATE TABLE IF NOT EXISTS positions (
     trip_direction_id          INTEGER,
     route                      TEXT REFERENCES routes(route),
     trip_route_id              TEXT,
-    trip_schedule_relationship TEXT,
+    trip_schedule_relationship INTEGER,
     trip_start_date            TEXT,
     trip_trip_id               TEXT,
     vehicle_id                 TEXT,
@@ -99,6 +106,21 @@ POSITIONS_TIMESTAMP_INDEX = (
 
 POSITIONS_ROUTE_INDEX = (
     "CREATE INDEX IF NOT EXISTS idx_positions_route ON positions (route)")
+
+# Observed vs scheduled arrival per trip, stop and service date, filled by
+# gtfs_position_collection.arrivals; a rerun replaces the row of the same key.
+ARRIVALS_DDL = """
+CREATE TABLE IF NOT EXISTS arrivals (
+    trip_id           TEXT NOT NULL,
+    stop_id           TEXT NOT NULL,
+    service_date      TEXT NOT NULL,
+    route_id          TEXT,
+    observed_arrival  TEXT,
+    scheduled_arrival TEXT,
+    distance_m        REAL,
+    PRIMARY KEY (trip_id, stop_id, service_date)
+)
+"""
 
 
 def delete_database(db_path=DB_PATH):
@@ -120,7 +142,7 @@ def delete_database(db_path=DB_PATH):
 
 
 def create_database(db_path=DB_PATH, reset=False):
-    """Creates the three pipeline tables in db_path if they do not exist yet.
+    """Creates the four pipeline tables in db_path if they do not exist yet.
 
     Existing tables and rows are kept, so a re-run never loses collected data.
 
@@ -141,11 +163,12 @@ def create_database(db_path=DB_PATH, reset=False):
         conn.execute(POSITIONS_DDL)
         conn.execute(POSITIONS_TIMESTAMP_INDEX)
         conn.execute(POSITIONS_ROUTE_INDEX)
+        conn.execute(ARRIVALS_DDL)
     return db_path
 
 
 def main():
-    """Creates data/gtfs.db with the three pipeline tables (--reset wipes it first)."""
+    """Creates data/gtfs.db with the four pipeline tables (--reset wipes it first)."""
     parser = argparse.ArgumentParser(description="Create the pipeline database tables.")
     parser.add_argument("--reset", action="store_true",
                         help="delete data/gtfs.db first (wipes collected positions)")
@@ -156,7 +179,7 @@ def main():
     with sqlite3.connect(db_path) as conn:
         tables = [row[0] for row in conn.execute(
             "SELECT name FROM sqlite_master WHERE type = 'table' AND name IN "
-            "('routes', 'stops', 'positions') ORDER BY name")]
+            "('routes', 'stops', 'positions', 'arrivals') ORDER BY name")]
     if args.reset and existed:
         action = "recreated"
     elif existed:

@@ -13,6 +13,7 @@ from pathlib import Path
 
 # Paths
 DATA_DIR = Path(__file__).resolve().parent.parent / "data"
+DB_PATH = DATA_DIR / "gtfs.db"  # The one SQLite database every stage shares.
 TIMETABLE_DIR = DATA_DIR / "timetable"
 METRO_TAPS_DIR = DATA_DIR / "validations"
 SELECTION_DIR = DATA_DIR / "selection"
