@@ -1,5 +1,5 @@
-# Student Name: Tahzeeb Ahmed
-# Student FAN:  ahme0423
+# Student Name: Mauro Turci
+# Student FAN:  turc0022
 # File:         gtfs_position_collection/main.py
 # Date:         07-10-2026
 # Description:  Polling loop: fetch vehicle positions, filter, store (T08).
@@ -112,24 +112,28 @@ def poll_once(conn, base_routes, stops, last_feed_timestamp):
 
 def main():
     """Polls the live feed into the positions table while the collection window is open."""
-    parser = argparse.ArgumentParser(description="Collect live positions of the chosen routes.")
+    parser = argparse.ArgumentParser(
+        description="Collect live positions of the chosen routes.")
     parser.add_argument("--once", action="store_true",
                         help="poll once and exit, ignoring the collection window (for testing)")
     args = parser.parse_args()
     set_up_logging()
 
-    create_database(config.DB_PATH)  # Creates the tables if setup has not run; never deletes rows.
+    # Creates the tables if setup has not run; never deletes rows.
+    create_database(config.DB_PATH)
     conn = sqlite3.connect(config.DB_PATH)
     conn.execute("PRAGMA foreign_keys = ON")
     try:
-        base_routes, variant_route_ids, stops = load_chosen_route_ids_and_stops(conn)
+        base_routes, variant_route_ids, stops = load_chosen_route_ids_and_stops(
+            conn)
         logger.info("collecting routes %s near %d stops into %s",
                     " ".join(sorted(base_routes)), len(stops), config.DB_PATH)
         if args.once:
             poll_once(conn, base_routes, stops, last_feed_timestamp=None)
             return
 
-        window = CollectionWindow(variant_route_ids, {stop_id for stop_id, _, _ in stops})
+        window = CollectionWindow(
+            variant_route_ids, {stop_id for stop_id, _, _ in stops})
         last_feed_timestamp, was_open = None, None
         while True:
             is_open = window.is_open()
@@ -143,10 +147,12 @@ def main():
                 continue
             poll_started = time.monotonic()
             try:
-                last_feed_timestamp = poll_once(conn, base_routes, stops, last_feed_timestamp)
+                last_feed_timestamp = poll_once(
+                    conn, base_routes, stops, last_feed_timestamp)
             except Exception:  # Never crash: log it and try again next poll.
                 logger.exception("poll failed")
-            time.sleep(max(0.0, config.LIVE_POLL_SECONDS - (time.monotonic() - poll_started)))
+            time.sleep(max(0.0, config.LIVE_POLL_SECONDS -
+                       (time.monotonic() - poll_started)))
     except KeyboardInterrupt:
         logger.info("stopped by user")
     finally:
