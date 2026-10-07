@@ -11,21 +11,23 @@ scheduled bus of the chosen routes at the chosen stops, see collection_window):
   1. fetch the live vehicle_positions feed;
   2. skip it if the feed header timestamp has not moved since the last poll;
   3. keep only chosen routes within STOP_RADIUS_M of a chosen stop (filters);
-  4. store them in positions with their base route; a vehicle report already
+  4. validate them; rejected rows go to quarantine with the reason (validate);
+  5. store the rest in positions with their base route; a vehicle report already
      stored (same vehicle_id and timestamp) is ignored.
 The chosen routes and stops are read once, at start, from the routes and stops
-tables (`make selection` fills them). Each poll is logged to
+tables (`make selection` fills them). scheduled_stop_times is checked at start and
+again on each new Adelaide day, so a new timetable version is picked up during a
+multi-day collection (scheduled_times). Each poll is logged to
 data/logs/collector.log; an error is logged and the loop carries on, so one
 network blip never ends a collection day. Stop it with Ctrl+C.
 """
 
 import argparse
 import logging
-import sqlite3
 import time
 from datetime import datetime
 
-from data_collection_setup.main import POSITIONS_COLUMNS, create_database
+from data_collection_setup.main import POSITIONS_COLUMNS, connect_to_database, create_database
 from gtfs_position_collection import filters, validate
 from gtfs_position_collection.collection_window import ADELAIDE_TZ, CollectionWindow
 from gtfs_position_collection.feed import fetch_vehicle_positions
@@ -136,19 +138,18 @@ def poll_once(conn, base_routes, stops, last_feed_timestamp):
 
     return feed_timestamp
 
-# Used by scheduled time 
-def connect():
-    """Opens the SQL database
+def refresh_scheduled_stop_times():
+    """Makes sure scheduled_stop_times matches today's timetable version and logs it.
 
-    Returns:
-        sqlite3.Connection configured to return rows by column name.
+    The version check behind it contacts Adelaide Metro at most once per day.
     """
-    config.DB_PATH.parent.mkdir(parents=True, exist_ok=True)
-
-    conn = sqlite3.connect(config.DB_PATH, timeout=30)
-    conn.row_factory = sqlite3.Row
-
-    return conn
+    schedule_info = ensure_scheduled_stop_times()
+    logger.info(
+        "static schedule ready: %d rows, GTFS version %s%s",
+        schedule_info["rows"],
+        schedule_info["gtfs_version"],
+        " (reloaded)" if schedule_info["reloaded"] else "",
+    )
 
 def main():
     """Polls live positions while the collection window is open."""
@@ -174,15 +175,10 @@ def main():
 
     # Ensure the current static GTFS timetable and scheduled_stop_times
     # are ready before realtime validation begins.
-    schedule_info = ensure_scheduled_stop_times()
+    refresh_scheduled_stop_times()
+    schedule_checked_on = datetime.now(ADELAIDE_TZ).date()
 
-    logger.info(
-        "static schedule ready: %d rows, GTFS version %s",
-        schedule_info["rows"],
-        schedule_info["gtfs_version"],
-    )
-
-    conn = connect()
+    conn = connect_to_database(config.DB_PATH)
 
     try:
         base_routes, variant_route_ids, stops = (load_chosen_route_ids_and_stops(conn))
@@ -215,6 +211,15 @@ def main():
         was_open = None
 
         while True:
+            # A new Adelaide day: re-check the timetable version (T06 daily reload).
+            today = datetime.now(ADELAIDE_TZ).date()
+            if today != schedule_checked_on:
+                try:
+                    refresh_scheduled_stop_times()
+                    schedule_checked_on = today
+                except Exception:  # Keep collecting with the current schedule.
+                    logger.exception("daily schedule refresh failed; retrying next poll")
+
             is_open = window.is_open()
 
             if is_open != was_open:

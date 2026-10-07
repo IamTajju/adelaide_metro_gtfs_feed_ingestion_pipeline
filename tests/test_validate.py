@@ -327,3 +327,13 @@ def test_simple_field_aliases_are_also_supported(db):
     )
 
     assert result.valid is True
+
+def test_repeated_report_is_quarantined_once(db, valid_record):
+    """A stale report the feed repeats on later polls is not stored again."""
+    stale = dict(valid_record, timestamp=TEST_NOW - 600)
+
+    _, first_poll = validate_positions([stale], db, now=TEST_NOW)
+    _, second_poll = validate_positions([stale], db, now=TEST_NOW + 15)
+
+    assert (first_poll, second_poll) == (1, 0)
+    assert db.execute("SELECT COUNT(*) FROM quarantine").fetchone()[0] == 1

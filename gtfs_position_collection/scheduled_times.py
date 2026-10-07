@@ -4,180 +4,60 @@
 # Date:         27-09-2026
 # Description:  Loads scheduled GTFS arrivals for selected routes and stops
 # Usage:        python -m gtfs_position_collection.scheduled_times
-"""Builds scheduled_stop_times for the chosen trips and stops, maintained with the current timetable version."""
+"""Builds scheduled_stop_times for the chosen trips and stops, maintained with the current timetable version.
+
+The chosen routes and stops are read from the routes and stops tables, the same
+source the collector uses, so the schedule always matches what is being collected.
+"""
 
 
 import argparse
 import hashlib
 from datetime import datetime
-from pathlib import Path
 from zoneinfo import ZoneInfo
 
 import pandas as pd
-import sqlite3
-from data_collection_setup.main import get_state, set_state
+from data_collection_setup.main import connect_to_database, get_state, set_state
 from shared import config
 from shared import timetable
 
 
-# Used for scheduled_times
-def connect():
-    """Opens the project SQLite database.
+def load_selected_routes(conn):
+    """Loads the chosen base-route codes from the routes table.
 
-    Returns:
-        sqlite3.Connection configured to return rows by column name.
-    """
-    config.DB_PATH.parent.mkdir(parents=True, exist_ok=True)
-
-    conn = sqlite3.connect(config.DB_PATH, timeout=30)
-
-    conn.row_factory = sqlite3.Row
-
-    conn.execute(
-        "PRAGMA foreign_keys = ON"
-    )
-
-    return conn
-
-
-
-def find_latest_file(directory, pattern):
-    """Finds the most recently modified matching CSV.
+    The collector and filters read the same table, so the schedule always
+    matches the selection being collected.
 
     Args:
-        directory: Directory containing selection CSVs.
-        pattern: Filename glob such as top_k_routes_*.csv.
+        conn: Open connection to the project database.
 
     Returns:
-        Absolute Path to the newest matching file.
+        Set of base route codes, e.g. {"G10", "M44"}.
 
     Raises:
-        FileNotFoundError: If no matching file exists.
+        RuntimeError: if the routes table is empty.
     """
-    directory = Path(directory).resolve()
-
-    files = list(directory.glob(pattern))
-
-    if not files:
-        raise FileNotFoundError(
-            f"No file matching {pattern!r} found in {directory}"
-        )
-
-    latest = max(files, key=lambda path: path.stat().st_mtime)
-
-    return latest.resolve()
-
-
-def _selected_rows(df):
-    """Filters a selection DataFrame if it contains a 'selected' column.
-
-    If no 'selected' column exists, every row is treated as selected.
-    """
-    if "selected" not in df.columns:
-        return df
-
-    selected = (
-        df["selected"]
-        .astype(str)
-        .str.strip()
-        .str.lower()
-        .isin({"1", "true", "yes", "y"})
-    )
-    
-    return df[selected]
-
-
-def load_selected_routes(path):
-    """Loads selected base-route codes from the top-k route CSV.
-
-    Args:
-        path: Path to top_k_routes_*.csv.
-
-    Returns:
-        Set of selected route codes.
-    """
-    path = Path(path)
-
-    # If a relative path was supplied, interpret it relative to project root
-    if not path.is_absolute():
-        path = config.ROOT / path
-
-    path = path.resolve()
-
-    if not path.exists():
-        raise FileNotFoundError(
-            f"Selected routes CSV does not exist: {path}"
-        )
-
-    df = pd.read_csv(path, dtype=str)
-
-    df = _selected_rows(df)
-
-    if "route" not in df.columns:
-        raise ValueError(
-            f"{path} does not contain the required 'route' column"
-        )
-
-    routes = {
-        route.strip()
-        for route in df["route"].dropna()
-        if route.strip()
-    }
-
+    routes = {row["route"] for row in conn.execute("SELECT route FROM routes")}
     if not routes:
-        raise ValueError(
-            f"No selected routes found in {path}"
-        )
-
+        raise RuntimeError("routes table is empty; run `make selection` first")
     return routes
 
 
-def load_selected_stops(path):
-    """Loads selected GTFS stop IDs from the top-m stop CSV.
+def load_selected_stops(conn):
+    """Loads the chosen GTFS stop_ids from the stops table.
 
     Args:
-        path: Path to top_m_stops_*.csv.
+        conn: Open connection to the project database.
 
     Returns:
-        Set of selected GTFS stop IDs.
+        Set of stop_id strings (a stop chosen by two routes appears once).
+
+    Raises:
+        RuntimeError: if the stops table is empty.
     """
-    path = Path(path)
-
-    # If a relative path was supplied, interpret it relative to project root
-    if not path.is_absolute():
-        path = config.ROOT / path
-
-    path = path.resolve()
-
-    if not path.exists():
-        raise FileNotFoundError(
-            f"Selected stops CSV does not exist: {path}"
-        )
-
-    df = pd.read_csv(path, dtype=str)
-
-    df = _selected_rows(df)
-
-    if "stop_id" in df.columns:
-        column = "stop_id"
-    elif "gtfs_stop_id" in df.columns:
-        column = "gtfs_stop_id"
-    else:
-        raise ValueError(
-            f"{path} must contain 'stop_id' or 'gtfs_stop_id'"
-        )
-
-    stops = {
-        stop.strip()
-        for stop in df[column].dropna()
-        if stop.strip()
-    }
-
+    stops = {row["stop_id"] for row in conn.execute("SELECT DISTINCT stop_id FROM stops")}
     if not stops:
-        raise ValueError(
-            f"No selected stops found in {path}"
-        )
-
+        raise RuntimeError("stops table is empty; run `make selection` first")
     return stops
 
 
@@ -431,31 +311,39 @@ def build_scheduled_stop_times(
     return schedule.reset_index(drop=True)
 
 
-def selection_fingerprint(route_path, stop_path):
-    """Produces a fingerprint for the current route/stop selections.
+def selection_fingerprint(selected_routes, selected_stops):
+    """Fingerprints the current selection, so a changed selection forces a rebuild.
+
+    Args:
+        selected_routes: Set of base route codes.
+        selected_stops: Set of stop_ids.
+
+    Returns:
+        Hex SHA-256 of the sorted routes and stops.
     """
     digest = hashlib.sha256()
-
-    for path in (Path(route_path), Path(stop_path)):
-        digest.update(path.name.encode("utf-8"))
-
-        with path.open("rb") as file:
-            while True:
-                block = file.read(64 * 1024)
-
-                if not block:
-                    break
-
-                digest.update(block)
-
+    digest.update(",".join(sorted(selected_routes)).encode("utf-8"))
+    digest.update(b"|")
+    digest.update(",".join(sorted(selected_stops)).encode("utf-8"))
     return digest.hexdigest()
 
 
-def replace_schedule(conn, schedule, version, fingerprint):
-    """Atomically replaces scheduled_stop_times with a new schedule.
+def replace_schedule(conn, schedule, version, fingerprint, keep_other_versions):
+    """Atomically loads a schedule into scheduled_stop_times.
 
     If an insertion fails, SQLite rolls the entire transaction back, so
     the previous working schedule remains available.
+
+    Args:
+        conn: Open connection to the project database.
+        schedule: DataFrame from build_scheduled_stop_times.
+        version: GTFS version of the schedule.
+        fingerprint: selection_fingerprint of the chosen routes and stops.
+        keep_other_versions: True when only the timetable version changed:
+            rows of earlier versions stay, so arrivals already collected
+            under them can still be matched. False when the selection
+            changed: every row is replaced, since old trips x stops no
+            longer apply.
     """
     sql = """
         INSERT INTO scheduled_stop_times (
@@ -489,7 +377,10 @@ def replace_schedule(conn, schedule, version, fingerprint):
     rows = list(clean.itertuples(index=False, name=None))
 
     with conn:
-        conn.execute("DELETE FROM scheduled_stop_times")
+        if keep_other_versions:
+            conn.execute("DELETE FROM scheduled_stop_times WHERE gtfs_version = ?", (str(version),))
+        else:
+            conn.execute("DELETE FROM scheduled_stop_times")
 
         conn.executemany(sql, rows)
 
@@ -561,16 +452,15 @@ def current_gtfs_version(conn, force_check=False):
     return version
 
 
-def schedule_row_count(conn):
-    """Returns the number of rows currently in scheduled_stop_times."""
+def schedule_row_count(conn, version):
+    """Returns the number of scheduled_stop_times rows of one GTFS version."""
     return conn.execute(
-        "SELECT COUNT(*) FROM scheduled_stop_times"
+        "SELECT COUNT(*) FROM scheduled_stop_times WHERE gtfs_version = ?",
+        (str(version),),
     ).fetchone()[0]
 
 
 def ensure_scheduled_stop_times(
-    route_path=None,
-    stop_path=None,
     force_version_check=False,
     force_reload=False,
 ):
@@ -579,36 +469,19 @@ def ensure_scheduled_stop_times(
     This is the main public function used by Stage 3.
 
     It:
-      - resolves the latest Stage 1/Stage 2 selection files;
+      - reads the chosen routes and stops from the routes and stops tables;
       - checks version.txt once per Adelaide day;
       - downloads static GTFS when necessary;
       - rebuilds the schedule when either GTFS or selections change.
 
     Args:
-        route_path: Optional route selection CSV.
-        stop_path: Optional stop selection CSV.
         force_version_check: Query version.txt even if already checked today.
         force_reload: Rebuild the table even if nothing appears to have changed.
 
     Returns:
         Dictionary describing the schedule state.
     """
-    if route_path is None:
-        route_path = find_latest_file(
-            config.SELECTION_DIR,
-            "top_k_routes_*.csv",
-        )
-
-    if stop_path is None:
-        stop_path = find_latest_file(
-            config.SELECTION_DIR,
-            "top_m_stops_*.csv",
-        )
-
-    route_path = Path(route_path)
-    stop_path = Path(stop_path)
-
-    conn = connect()
+    conn = connect_to_database()
 
     try:
 
@@ -621,10 +494,9 @@ def ensure_scheduled_stop_times(
         # Ensures data/timetable belongs to this version
         timetable_path = timetable.download_timetable(version)
 
-        fingerprint = selection_fingerprint(
-            route_path,
-            stop_path,
-        )
+        selected_routes = load_selected_routes(conn)
+        selected_stops = load_selected_stops(conn)
+        fingerprint = selection_fingerprint(selected_routes, selected_stops)
 
         loaded_version = get_state(
             conn,
@@ -636,13 +508,14 @@ def ensure_scheduled_stop_times(
             "scheduled_selection_fingerprint",
         )
 
-        existing_rows = schedule_row_count(conn)
+        existing_rows = schedule_row_count(conn, version)
+        selection_changed = loaded_fingerprint != fingerprint
 
         reload_required = (
             force_reload
             or existing_rows == 0
             or loaded_version != version
-            or loaded_fingerprint != fingerprint
+            or selection_changed
         )
 
         if not reload_required:
@@ -655,12 +528,7 @@ def ensure_scheduled_stop_times(
                 "gtfs_version": version,
                 "rows": existing_rows,
                 "reloaded": False,
-                "route_file": str(route_path),
-                "stop_file": str(stop_path),
             }
-
-        selected_routes = load_selected_routes(route_path)
-        selected_stops = load_selected_stops(stop_path)
 
         print(
             f"Building schedule for {len(selected_routes)} routes "
@@ -679,6 +547,7 @@ def ensure_scheduled_stop_times(
             schedule,
             version,
             fingerprint,
+            keep_other_versions=not selection_changed,
         )
 
         print(
@@ -705,8 +574,6 @@ def ensure_scheduled_stop_times(
             "stops": schedule["stop_id"].nunique(),
             "routes": schedule["route"].nunique(),
             "reloaded": True,
-            "route_file": str(route_path),
-            "stop_file": str(stop_path),
         }
 
     finally:
@@ -719,24 +586,6 @@ def main():
         description=(
             "Load selected Adelaide Metro GTFS scheduled stop times."
         )
-    )
-
-    parser.add_argument(
-        "--routes",
-        type=Path,
-        help=(
-            "Route selection CSV. "
-            "Defaults to latest top_k_routes_*.csv."
-        ),
-    )
-
-    parser.add_argument(
-        "--stops",
-        type=Path,
-        help=(
-            "Stop selection CSV. "
-            "Defaults to latest top_m_stops_*.csv."
-        ),
     )
 
     parser.add_argument(
@@ -754,8 +603,6 @@ def main():
     args = parser.parse_args()
 
     ensure_scheduled_stop_times(
-        route_path=args.routes,
-        stop_path=args.stops,
         force_version_check=args.force_version_check,
         force_reload=args.force_reload,
     )

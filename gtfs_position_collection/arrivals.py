@@ -8,8 +8,8 @@
 
 For every chosen stop, trip and service date the stored ping closest to the
 stop (within STOP_RADIUS_M) is taken as the observed arrival, and it is
-written to the arrivals table next to the scheduled time from the static
-timetable. When two pings are equally close the earlier one wins, because
+written to the arrivals table next to its scheduled time from the
+scheduled_stop_times table (filled by scheduled_times). When two pings are equally close the earlier one wins, because
 the bus was already there. What counts as "delayed" is a question for
 Artefact 2, so this stage only keeps the two times side by side.
 
@@ -23,7 +23,7 @@ from zoneinfo import ZoneInfo
 
 import pandas as pd
 
-from data_collection_setup.main import ARRIVALS_DDL
+from data_collection_setup.main import ARRIVALS_DDL, create_database
 from gtfs_position_collection import filters
 from shared import config
 
@@ -109,25 +109,38 @@ def scheduled_arrival(service_date, arrival_time):
     return "%s %02d:%02d:%02d" % (day, hours % 24, minutes, seconds)
 
 
-def load_stop_times(stops):
-    """Reads the scheduled times of the chosen stops from the timetable files.
+def load_stop_times(conn, stops):
+    """Reads the scheduled times of the chosen stops from scheduled_stop_times.
 
-    The static timetable on disk is read directly, so this stage does not
-    depend on a table that another module may not have loaded. A trip that
-    loops through the same stop twice keeps its first visit.
+    The table keeps every timetable version loaded during the collection, so
+    trips collected before a timetable change still find their scheduled time.
+    If a trip and stop appear in several versions, the newest version wins. A
+    trip that loops through the same stop twice keeps its first visit.
 
     Args:
+        conn: Open connection to the project database.
         stops: List of (stop_id, stop_lat, stop_lon) tuples.
 
     Returns:
         DataFrame with trip_id, stop_id and arrival_time columns.
+
+    Raises:
+        RuntimeError: if scheduled_stop_times holds nothing for the chosen stops.
     """
-    frame = pd.read_csv(config.TIMETABLE_DIR / "stop_times.txt", dtype=str,
-                        usecols=["trip_id", "stop_id", "arrival_time"])
+    frame = pd.read_sql_query(
+        "SELECT gtfs_version, trip_id, stop_id, stop_sequence, "
+        "scheduled_arrival AS arrival_time FROM scheduled_stop_times", conn)
     chosen = {stop_id for stop_id, _, _ in stops}
     frame = frame[frame["stop_id"].isin(chosen)]
-    return frame.sort_values("arrival_time").drop_duplicates(
-        subset=["trip_id", "stop_id"], keep="first")
+    if frame.empty:
+        raise RuntimeError(
+            "scheduled_stop_times has no rows for the chosen stops; run `make schedule` "
+            "(or start `make collect`, which builds it) first")
+    # Versions are numbers ("1705"); compare them as numbers, newest first.
+    frame = frame.assign(version_number=pd.to_numeric(frame["gtfs_version"], errors="coerce"))
+    frame = frame.sort_values(["version_number", "stop_sequence"], ascending=[False, True])
+    return frame.drop_duplicates(subset=["trip_id", "stop_id"], keep="first")[
+        ["trip_id", "stop_id", "arrival_time"]]
 
 
 def add_times(observed, stop_times):
@@ -186,7 +199,7 @@ def fill_arrivals(conn, route_ids=None, stops=None, stop_times=None):
         stops: Optional list of (stop_id, stop_lat, stop_lon) tuples, read
             from the stops table when not given.
         stop_times: Optional DataFrame of scheduled times, read from the
-            timetable files when not given.
+            scheduled_stop_times table when not given.
 
     Returns:
         Number of arrivals written.
@@ -198,13 +211,14 @@ def fill_arrivals(conn, route_ids=None, stops=None, stop_times=None):
     if observed.empty:
         return 0
     if stop_times is None:
-        stop_times = load_stop_times(stops)
+        stop_times = load_stop_times(conn, stops)
     arrivals = add_times(observed, stop_times)
     return store_arrivals(conn, arrivals)
 
 
 def main():
     """Fills the arrivals table and prints what was stored."""
+    create_database(config.DB_PATH)  # Adds any table an older database is missing.
     conn = sqlite3.connect(config.DB_PATH)
     try:
         written = fill_arrivals(conn)

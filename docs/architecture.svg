@@ -1,0 +1,229 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1400" height="1000" viewBox="0 0 1400 1000" font-family="Helvetica Neue, Helvetica, Arial, sans-serif">
+  <title>Adelaide Metro GTFS ingestion pipeline: system architecture</title>
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#57606a"/>
+    </marker>
+    <style>
+      .t { font-size: 11px; fill: #1f2328; }
+      .m { font-size: 11px; fill: #57606a; }
+      .s { font-size: 10px; fill: #57606a; }
+      .b { font-size: 12px; font-weight: 700; fill: #1f2328; }
+      .h { font-size: 13px; font-weight: 700; fill: #1f2328; }
+      .col { font-size: 12px; font-weight: 700; fill: #57606a; letter-spacing: 0.06em; }
+      .mono { font-family: Menlo, Consolas, monospace; font-size: 10px; fill: #1f2328; }
+      .w { fill: none; stroke: #57606a; stroke-width: 1.5; marker-end: url(#arrow); }
+      .r { fill: none; stroke: #57606a; stroke-width: 1.3; stroke-dasharray: 5 4; marker-end: url(#arrow); }
+      .lane { fill: none; stroke: #57606a; stroke-width: 1.5; }
+      .rlane { fill: none; stroke: #57606a; stroke-width: 1.3; stroke-dasharray: 5 4; }
+      .src { fill: #f6f8fa; stroke: #6e7781; stroke-width: 1.2; }
+      .sel { fill: #eaf2fc; stroke: #2a78d6; stroke-width: 1.5; }
+      .col3 { fill: #fdf0ea; stroke: #eb6834; stroke-width: 1.5; }
+      .post { fill: #e8f7f1; stroke: #1baf7a; stroke-width: 1.5; }
+      .wx { fill: #fdf5e3; stroke: #c98500; stroke-width: 1.5; }
+      .inner { fill: #ffffff; stroke: #8c959f; stroke-width: 1; }
+      .db { fill: #f6f8fa; stroke: #24292f; stroke-width: 1.8; }
+      .tbl { fill: #ffffff; stroke: #8c959f; stroke-width: 1; }
+    </style>
+  </defs>
+
+  <rect width="1400" height="1000" fill="#ffffff"/>
+
+  <!-- Title -->
+  <text x="20" y="30" font-size="20" font-weight="700" fill="#1f2328">Adelaide Metro GTFS ingestion pipeline: system architecture</text>
+  <text x="20" y="50" class="m">COMP9742 Artefact 1 · solid arrows = data written · dashed arrows = data read · one SQLite database, data/gtfs.db</text>
+
+  <!-- Column headers -->
+  <text x="20" y="76" class="col">EXTERNAL SOURCES</text>
+  <text x="280" y="76" class="col">PIPELINE (PYTHON PACKAGES)</text>
+  <text x="900" y="76" class="col">STORAGE</text>
+  <text x="1190" y="76" class="col">RUN &amp; CONSUME</text>
+
+  <!-- ============ External sources ============ -->
+  <rect class="src" x="20" y="104" width="210" height="72" rx="8"/>
+  <text x="32" y="126" class="b">Metrocard taps</text>
+  <text x="32" y="144" class="m">data.sa.gov.au, quarterly CSV</text>
+  <text x="32" y="160" class="m">boardings per route × stop</text>
+
+  <rect class="src" x="20" y="232" width="210" height="86" rx="8"/>
+  <text x="32" y="254" class="b">Static GTFS timetable</text>
+  <text x="32" y="272" class="m">Adelaide Metro zip, re-downloaded</text>
+  <text x="32" y="288" class="m">when version.txt changes</text>
+  <text x="32" y="304" class="m">trips, stop_times, stops, shapes</text>
+
+  <rect class="src" x="20" y="546" width="210" height="72" rx="8"/>
+  <text x="32" y="568" class="b">GTFS-realtime feed</text>
+  <text x="32" y="586" class="m">vehicle_positions, every bus</text>
+  <text x="32" y="602" class="m">refreshes every 15 s</text>
+
+  <rect class="src" x="20" y="821" width="210" height="60" rx="8"/>
+  <text x="32" y="845" class="b">Open-Meteo API</text>
+  <text x="32" y="863" class="m">hourly weather, Adelaide</text>
+
+  <!-- ============ Stage 1 ============ -->
+  <rect class="sel" x="280" y="86" width="560" height="146" rx="10"/>
+  <text x="296" y="106" class="h">Stage 1 · select_routes <tspan class="s" font-weight="400" dx="8">make route_candidates → make route_selection</tspan></text>
+  <rect class="inner" x="300" y="118" width="240" height="66" rx="6"/>
+  <text x="312" y="138" class="b">candidates.py · main.py</text>
+  <text x="312" y="155" class="t">rank routes by CBD boardings → top 15</text>
+  <text x="312" y="171" class="t">+ weekday trips from the timetable</text>
+  <rect class="inner" x="580" y="118" width="240" height="66" rx="6"/>
+  <text x="592" y="138" class="b">selection.py</text>
+  <text x="592" y="155" class="t">0.6·boardings + 0.4·trips rank</text>
+  <text x="592" y="171" class="t">+ N/E/S/W coverage → top k = 5</text>
+  <path class="w" d="M540,151 H578"/>
+  <text x="300" y="214" class="s">→ data/selection: CSVs, route maps, bar charts</text>
+  <text x="708" y="214" class="s">top k routes</text>
+
+  <!-- ============ Stage 2 ============ -->
+  <rect class="sel" x="280" y="258" width="560" height="140" rx="10"/>
+  <text x="296" y="278" class="h">Stage 2 · select_stops</text>
+  <rect class="inner" x="300" y="292" width="240" height="66" rx="6"/>
+  <text x="312" y="312" class="b">candidates.py · main.py</text>
+  <text x="312" y="329" class="t">CBD stops served by the top k routes</text>
+  <text x="312" y="345" class="t">trips → stop_times → stops + boardings</text>
+  <rect class="inner" x="580" y="292" width="240" height="66" rx="6"/>
+  <text x="592" y="312" class="b">selection.py</text>
+  <text x="592" y="329" class="t">top 3 stops per route by boardings</text>
+  <text x="592" y="345" class="t">+ N/E/S/W quadrant swap → top m</text>
+  <path class="w" d="M540,325 H578"/>
+  <text x="300" y="384" class="s">make stop_candidates → make stop_selection · → data/selection: CSVs, CBD stop map</text>
+
+  <!-- Stage 1 → Stage 2 -->
+  <path class="w" d="M700,184 V245 H560 V300 H542"/>
+
+  <!-- ============ Stage 3: collector ============ -->
+  <rect class="col3" x="280" y="418" width="560" height="230" rx="10"/>
+  <text x="296" y="438" class="h">Stage 3 · gtfs_position_collection <tspan class="s" font-weight="400" dx="8">make collect, polls every 15 s; reads the chosen routes + stops</tspan></text>
+  <rect class="inner" x="300" y="452" width="240" height="66" rx="6"/>
+  <text x="312" y="472" class="b">collection_window.py</text>
+  <text x="312" y="489" class="t">first → last scheduled chosen bus</text>
+  <text x="312" y="505" class="t">± 30 min; polling sleeps outside it</text>
+  <rect class="inner" x="580" y="452" width="240" height="66" rx="6"/>
+  <text x="592" y="472" class="b">scheduled_times.py</text>
+  <text x="592" y="489" class="t">scheduled arrivals of chosen trips</text>
+  <text x="592" y="505" class="t">reloaded when the timetable changes</text>
+
+  <rect class="inner" x="300" y="546" width="120" height="72" rx="6"/>
+  <text x="312" y="566" class="b">feed.py</text>
+  <text x="312" y="583" class="t">fetch the feed,</text>
+  <text x="312" y="599" class="t">skip unchanged</text>
+  <rect class="inner" x="444" y="546" width="120" height="72" rx="6"/>
+  <text x="456" y="566" class="b">filters.py</text>
+  <text x="456" y="583" class="t">chosen route and</text>
+  <text x="456" y="599" class="t">≤ 500 m of a stop</text>
+  <rect class="inner" x="588" y="546" width="112" height="72" rx="6"/>
+  <text x="600" y="566" class="b">validate.py</text>
+  <text x="600" y="583" class="t">reject bad rows</text>
+  <text x="600" y="599" class="t">(fields, SA, fresh)</text>
+  <rect class="inner" x="722" y="546" width="106" height="72" rx="6"/>
+  <text x="732" y="566" class="b">main.py</text>
+  <text x="732" y="583" class="t">store + base</text>
+  <text x="732" y="599" class="t">route, no dups</text>
+  <path class="w" d="M420,582 H442"/>
+  <path class="w" d="M564,582 H586"/>
+  <path class="w" d="M700,582 H720"/>
+  <text x="300" y="640" class="s">log: data/logs/collector.log</text>
+  <text x="760" y="628" class="s">rejected</text>
+
+  <!-- ============ Stage 3: after collection ============ -->
+  <rect class="post" x="280" y="666" width="560" height="118" rx="10"/>
+  <text x="296" y="686" class="h">Stage 3 · after collection <tspan class="s" font-weight="400" dx="8">run daily; reads positions, scheduled_stop_times</tspan></text>
+  <rect class="inner" x="300" y="700" width="520" height="66" rx="6"/>
+  <text x="312" y="720" class="b">arrivals.py</text>
+  <text x="312" y="737" class="t">observed arrival = the stored ping closest to the stop, per trip × stop × service day</text>
+  <text x="312" y="753" class="t">stored next to its scheduled time and the ping's distance from the stop</text>
+
+  <!-- ============ Stage 4: weather ============ -->
+  <rect class="wx" x="280" y="802" width="560" height="78" rx="10"/>
+  <text x="296" y="822" class="h">Stage 4 · weather_collection <tspan class="s" font-weight="400" dx="8">run daily (default: yesterday)</tspan></text>
+  <rect class="inner" x="300" y="832" width="520" height="38" rx="6"/>
+  <text x="312" y="855" class="t"><tspan font-weight="700">main.py</tspan><tspan dx="8">hourly temperature, rain, wind and weather code for the collection hours</tspan></text>
+
+  <!-- ============ Source arrows ============ -->
+  <!-- Metrocard taps → Stage 1 and Stage 2 candidates -->
+  <path class="w" d="M230,140 H298"/>
+  <path class="w" d="M250,140 V340 H298"/>
+  <!-- Static GTFS → Stage 1, Stage 2, collection window -->
+  <path class="lane" d="M230,275 H266"/>
+  <path class="lane" d="M266,170 V486"/>
+  <path class="w" d="M266,170 H298"/>
+  <path class="w" d="M266,310 H298"/>
+  <path class="w" d="M266,486 H298"/>
+  <!-- GTFS-realtime → feed.py; Open-Meteo → weather -->
+  <path class="w" d="M230,582 H298"/>
+  <path class="w" d="M230,851 H298"/>
+
+  <!-- ============ Database ============ -->
+  <rect class="db" x="900" y="86" width="250" height="794" rx="12"/>
+  <text x="916" y="108" class="h">data/gtfs.db</text>
+  <text x="916" y="124" class="s">SQLite · schema in data_collection_setup</text>
+
+  <rect class="tbl" x="916" y="134" width="218" height="34" rx="5"/>
+  <text x="928" y="155" class="t"><tspan font-weight="700">routes</tspan><tspan class="s" dx="7">top k routes</tspan></text>
+  <rect class="tbl" x="916" y="308" width="218" height="34" rx="5"/>
+  <text x="928" y="329" class="t"><tspan font-weight="700">stops</tspan><tspan class="s" dx="7">route × stop (top m)</tspan></text>
+  <rect class="tbl" x="916" y="468" width="218" height="34" rx="5"/>
+  <text x="928" y="489" class="t"><tspan font-weight="700">scheduled_stop_times</tspan></text>
+  <rect class="tbl" x="916" y="565" width="218" height="34" rx="5"/>
+  <text x="928" y="586" class="t"><tspan font-weight="700">positions</tspan><tspan class="s" dx="7">filtered pings</tspan></text>
+  <rect class="tbl" x="916" y="615" width="218" height="34" rx="5"/>
+  <text x="928" y="636" class="t"><tspan font-weight="700">quarantine</tspan><tspan class="s" dx="7">rejected rows</tspan></text>
+  <rect class="tbl" x="916" y="716" width="218" height="34" rx="5"/>
+  <text x="928" y="737" class="t"><tspan font-weight="700">arrivals</tspan><tspan class="s" dx="7">observed vs scheduled</tspan></text>
+  <rect class="tbl" x="916" y="834" width="218" height="34" rx="5"/>
+  <text x="928" y="855" class="t"><tspan font-weight="700">weather_hourly</tspan><tspan class="s" dx="7">hourly weather</tspan></text>
+
+  <!-- ============ Writes into the database ============ -->
+  <path class="w" d="M820,151 H914"/>
+  <path class="w" d="M820,325 H914"/>
+  <path class="w" d="M820,485 H914"/>
+  <path class="w" d="M828,582 H914"/>
+  <path class="w" d="M644,618 V632 H914"/>
+  <path class="w" d="M820,733 H914"/>
+  <path class="w" d="M820,851 H914"/>
+
+  <!-- ============ Reads: collector reads the selection ============ -->
+  <path class="rlane" d="M916,162 H872"/>
+  <path class="rlane" d="M916,336 H872"/>
+  <path class="r" d="M872,162 V531 H504 V544"/>
+  
+  <!-- ============ Run & consume ============ -->
+  <rect class="src" x="1190" y="86" width="190" height="222" rx="8"/>
+  <text x="1202" y="108" class="b">How it runs</text>
+  <text x="1202" y="132" class="mono">make selection</text>
+  <text x="1202" y="147" class="s">Stages 1 + 2, once</text>
+  <text x="1202" y="171" class="mono">make collect</text>
+  <text x="1202" y="186" class="s">Stage 3, long-running</text>
+  <text x="1202" y="210" class="mono">python -m …arrivals</text>
+  <text x="1202" y="225" class="s">after each collection day</text>
+  <text x="1202" y="249" class="mono">python -m weather_collection</text>
+  <text x="1202" y="264" class="s">after each collection day</text>
+  <text x="1202" y="290" class="s">settings: shared/config.py</text>
+
+  <rect class="src" x="1190" y="440" width="190" height="100" rx="8"/>
+  <text x="1202" y="464" class="b">Artefact 2 (next)</text>
+  <text x="1202" y="482" class="t">delay prediction +</text>
+  <text x="1202" y="498" class="t">weather patterns engine</text>
+  <text x="1202" y="516" class="m">reads data/gtfs.db</text>
+  <path class="r" d="M1150,490 H1188"/>
+
+  <!-- Legend -->
+  <rect x="1190" y="598" width="190" height="186" rx="8" fill="#ffffff" stroke="#8c959f"/>
+  <text x="1202" y="620" class="b">Legend</text>
+  <rect class="sel" x="1202" y="632" width="16" height="12" rx="2"/><text x="1226" y="642" class="t">route &amp; stop selection</text>
+  <rect class="col3" x="1202" y="652" width="16" height="12" rx="2"/><text x="1226" y="662" class="t">live collection</text>
+  <rect class="post" x="1202" y="672" width="16" height="12" rx="2"/><text x="1226" y="682" class="t">after collection</text>
+  <rect class="wx" x="1202" y="692" width="16" height="12" rx="2"/><text x="1226" y="702" class="t">weather</text>
+  <rect class="src" x="1202" y="712" width="16" height="12" rx="2"/><text x="1226" y="722" class="t">external / outside</text>
+  <path class="w" d="M1202,745 H1238"/><text x="1246" y="749" class="t">writes</text>
+  <path class="r" d="M1202,767 H1238"/><text x="1246" y="771" class="t">reads</text>
+
+  <!-- ============ Shared modules ============ -->
+  <rect x="20" y="900" width="1360" height="86" rx="10" fill="#f6f8fa" stroke="#8c959f"/>
+  <text x="36" y="920" class="h">Shared by every stage</text>
+  <text x="36" y="939" class="t"><tspan font-weight="700">shared/config.py</tspan><tspan dx="8">URLs, paths (DB_PATH, LOG_DIR), CBD box, Victoria Square, k, n, weights, poll interval, collection margin</tspan></text>
+  <text x="36" y="956" class="t"><tspan font-weight="700">shared/timetable.py</tspan><tspan dx="8">GTFS download + version check, read_gtfs, services running on a date, weekday trip counts, route shapes</tspan></text>
+  <text x="36" y="973" class="t"><tspan font-weight="700">data_collection_setup/main.py</tspan><tspan dx="8">schema for every table, create_database (non-destructive; --reset wipes), writers that replace the routes and stops tables</tspan></text>
+
+</svg>

@@ -193,7 +193,13 @@ def validate_timestamp_fresh(record, now=None):
 
 
 def validate_trip_exists(record, conn):
-    """Checks that the realtime trip exists in scheduled_stop_times."""
+    """Checks that the realtime trip is scheduled at one of the chosen stops.
+
+    scheduled_stop_times only holds the chosen routes' trips at the chosen
+    stops, so a trip fails this rule when it is unknown to the timetable, or
+    when it is a chosen-route trip that never stops at a chosen stop (it can
+    then never produce an arrival either).
+    """
     trip_id = _value(record, "trip_id")
 
     row = conn.execute(
@@ -211,8 +217,9 @@ def validate_trip_exists(record, conn):
             valid=False,
             reason=TRIP_NOT_FOUND,
             details=(
-                f"trip_id {trip_id!r} is not present in "
-                "scheduled_stop_times"
+                f"trip_id {trip_id!r} has no scheduled stop at a chosen stop "
+                "(not in scheduled_stop_times): unknown to the timetable, or "
+                "a chosen-route trip that does not serve the chosen stops"
             ),
         )
 
@@ -250,7 +257,15 @@ def validate_position(record, conn, now=None):
 
 
 def quarantine_record(conn, record, result, now=None):
-    """Stores one rejected vehicle-position record in quarantine."""
+    """Stores one rejected vehicle-position record in quarantine.
+
+    A vehicle repeats its last report across polls until it sends a new one,
+    so a report already quarantined for the same reason (same vehicle_id,
+    timestamp and reason) is not stored again.
+
+    Returns:
+        True if a row was stored, False if it was already in quarantine.
+    """
     if result.valid:
         raise ValueError(
             "Cannot quarantine a record that passed validation"
@@ -265,6 +280,15 @@ def quarantine_record(conn, record, result, now=None):
         default=str,
         sort_keys=True,
     )
+
+    vehicle_id = _value(record, "vehicle_id")
+    timestamp = _safe_int(_value(record, "timestamp"))
+    already_quarantined = conn.execute(
+        "SELECT 1 FROM quarantine WHERE vehicle_id IS ? AND timestamp IS ? AND reason = ? LIMIT 1",
+        (vehicle_id, timestamp, result.reason),
+    ).fetchone()
+    if already_quarantined:
+        return False
 
     conn.execute(
         """
@@ -297,6 +321,7 @@ def quarantine_record(conn, record, result, now=None):
             raw_record,
         ),
     )
+    return True
 
 
 def validate_positions(rows, conn, now=None):
@@ -314,7 +339,8 @@ def validate_positions(rows, conn, now=None):
     Returns:
         Tuple:
             valid_rows: List of rows that passed all validation rules.
-            quarantined_count: Number of rows rejected and quarantined.
+            quarantined_count: Number of rejected rows newly stored in
+                quarantine (a report already quarantined is not counted again).
     """
     if now is None:
         now = time.time()
@@ -335,13 +361,12 @@ def validate_positions(rows, conn, now=None):
                 valid_rows.append(record)
                 continue
 
-            quarantine_record(
+            if quarantine_record(
                 conn,
                 record,
                 result,
                 now=now,
-            )
-
-            quarantined_count += 1
+            ):
+                quarantined_count += 1
 
     return valid_rows, quarantined_count

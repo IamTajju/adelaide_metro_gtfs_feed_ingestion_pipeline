@@ -9,6 +9,7 @@
 import sqlite3
 
 import pandas as pd
+import pytest
 
 from gtfs_position_collection import arrivals
 
@@ -113,3 +114,36 @@ def test_fill_arrivals_end_to_end(tmp_path):
     # A second run replaces the row instead of duplicating it.
     assert arrivals.fill_arrivals(conn, {"G10"}, [STOP], stop_times) == 1
     assert conn.execute("SELECT COUNT(*) FROM arrivals").fetchone()[0] == 1
+
+
+def make_schedule_db(tmp_path, rows):
+    """A project database whose scheduled_stop_times holds the given rows."""
+    from data_collection_setup.main import create_database
+    conn = sqlite3.connect(create_database(tmp_path / "gtfs.db"))
+    conn.executemany(
+        "INSERT INTO scheduled_stop_times (gtfs_version, route, route_id, route_short_name, "
+        "service_id, trip_id, stop_id, stop_sequence, scheduled_arrival) "
+        "VALUES (?, 'G10', 'G10', 'G10', 'svc', ?, ?, ?, ?)", rows)
+    conn.commit()
+    return conn
+
+
+def test_load_stop_times_prefers_the_newest_timetable_version(tmp_path):
+    conn = make_schedule_db(tmp_path, [("1704", "T1", "S1", 5, "08:10:00"),
+                                       ("1705", "T1", "S1", 5, "08:12:00"),
+                                       ("1704", "T0", "S1", 5, "07:00:00")])
+    times = arrivals.load_stop_times(conn, [STOP]).set_index("trip_id")["arrival_time"]
+    # T1 takes the newer version; T0 only exists in the older one and is kept.
+    assert times.to_dict() == {"T1": "08:12:00", "T0": "07:00:00"}
+
+
+def test_load_stop_times_keeps_the_first_visit_of_a_loop(tmp_path):
+    conn = make_schedule_db(tmp_path, [("1705", "T1", "S1", 30, "09:00:00"),
+                                       ("1705", "T1", "S1", 2, "08:00:00")])
+    assert arrivals.load_stop_times(conn, [STOP])["arrival_time"].tolist() == ["08:00:00"]
+
+
+def test_load_stop_times_without_a_schedule_says_what_to_run(tmp_path):
+    conn = make_schedule_db(tmp_path, [])
+    with pytest.raises(RuntimeError, match="make schedule"):
+        arrivals.load_stop_times(conn, [STOP])
