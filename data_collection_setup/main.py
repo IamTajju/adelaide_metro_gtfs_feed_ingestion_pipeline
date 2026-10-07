@@ -40,6 +40,7 @@ reset the database (--reset) to start a collection with a new selection.
 import argparse
 import sqlite3
 from pathlib import Path
+from datetime import datetime, timezone
 
 from shared import config
 
@@ -124,6 +125,106 @@ CREATE TABLE IF NOT EXISTS arrivals (
 )
 """
 
+PIPELINE_STATE_DDL = """
+CREATE TABLE IF NOT EXISTS pipeline_state (
+            key TEXT PRIMARY KEY,
+            value TEXT NOT NULL,
+            updated_at TEXT NOT NULL
+        );
+        """
+
+SCEDULED_STOP_TIMES_DDL = """
+CREATE TABLE IF NOT EXISTS scheduled_stop_times (
+            gtfs_version TEXT NOT NULL,
+
+            route TEXT NOT NULL,
+            route_id TEXT NOT NULL,
+            route_short_name TEXT NOT NULL,
+
+            service_id TEXT NOT NULL,
+            trip_id TEXT NOT NULL,
+
+            direction_id TEXT,
+            shape_id TEXT,
+
+            stop_id TEXT NOT NULL,
+            stop_sequence INTEGER NOT NULL,
+
+            scheduled_arrival TEXT,
+            scheduled_departure TEXT,
+
+            arrival_seconds INTEGER,
+            departure_seconds INTEGER,
+
+            pickup_type TEXT,
+            drop_off_type TEXT,
+            timepoint TEXT,
+
+            PRIMARY KEY (
+                gtfs_version,
+                trip_id,
+                stop_sequence
+            )
+        );
+        """
+
+QUARANTINE_DDL = """
+CREATE TABLE IF NOT EXISTS quarantine (
+        quarantine_id INTEGER PRIMARY KEY AUTOINCREMENT,
+
+        quarantined_at INTEGER NOT NULL,
+
+        entity_id TEXT,
+        vehicle_id TEXT,
+        trip_id TEXT,
+        route_id TEXT,
+
+        timestamp INTEGER,
+        latitude REAL,
+        longitude REAL,
+
+        reason TEXT NOT NULL,
+        details TEXT,
+
+        raw_record TEXT NOT NULL
+    );
+    """
+
+SCHEDULED_TRIP_INDEX = """
+CREATE INDEX IF NOT EXISTS idx_scheduled_trip
+            ON scheduled_stop_times (trip_id);
+            """
+
+SCHEDULED_TRIP_STOP_INDEX = """
+CREATE INDEX IF NOT EXISTS idx_scheduled_trip_stop
+            ON scheduled_stop_times (trip_id, stop_id);
+            """
+
+SCHEDULED_STOP_INDEX = """
+CREATE INDEX IF NOT EXISTS idx_scheduled_stop
+            ON scheduled_stop_times (stop_id);
+            """
+
+SCHEDULED_ROUTE_INDEX = """
+CREATE INDEX IF NOT EXISTS idx_scheduled_route
+            ON scheduled_stop_times (route);
+            """
+
+QUARANTINE_REASON_INDEX = """
+CREATE INDEX IF NOT EXISTS idx_quarantine_reason
+        ON quarantine (reason);
+        """
+
+QUARANTINE_TRIP_INDEX = """
+CREATE INDEX IF NOT EXISTS idx_quarantine_trip
+        ON quarantine (trip_id);
+        """
+
+QUARANTINE_TIMESTAMP_INDEX = """
+CREATE INDEX IF NOT EXISTS idx_quarantine_timestamp
+        ON quarantine (timestamp);
+        """
+
 
 def delete_database(db_path=DB_PATH):
     """Deletes db_path and its write-ahead log sidecars, if they exist.
@@ -166,6 +267,16 @@ def create_database(db_path=DB_PATH, reset=False):
         conn.execute(POSITIONS_TIMESTAMP_INDEX)
         conn.execute(POSITIONS_ROUTE_INDEX)
         conn.execute(ARRIVALS_DDL)
+        conn.execute(PIPELINE_STATE_DDL)
+        conn.execute(SCEDULED_STOP_TIMES_DDL)
+        conn.execute(QUARANTINE_DDL)
+        conn.execute(SCHEDULED_TRIP_INDEX)
+        conn.execute(SCHEDULED_TRIP_STOP_INDEX)
+        conn.execute(SCHEDULED_STOP_INDEX)
+        conn.execute(SCHEDULED_ROUTE_INDEX)
+        conn.execute(QUARANTINE_REASON_INDEX)
+        conn.execute(QUARANTINE_TRIP_INDEX)
+        conn.execute(QUARANTINE_TIMESTAMP_INDEX)
     return db_path
 
 
@@ -244,6 +355,33 @@ def replace_top_m_stops_in_database(top_m_stops, db_path=DB_PATH):
     return replace_rows_in_database("stops", top_m_stops, STOPS_COLUMNS,
                                     tables_to_clear_first=[], db_path=db_path)
 
+def get_state(conn, key, default=None):
+    """Reads a value from pipeline_state."""
+    row = conn.execute(
+        "SELECT value FROM pipeline_state WHERE key = ?",
+        (key,),
+    ).fetchone()
+
+    if row is None:
+        return default
+
+    return row["value"]
+
+
+def set_state(conn, key, value):
+    """Creates or updates a pipeline state value."""
+    now = datetime.now(timezone.utc).isoformat()
+
+    conn.execute(
+        """
+        INSERT INTO pipeline_state (key, value, updated_at)
+        VALUES (?, ?, ?)
+        ON CONFLICT(key) DO UPDATE SET
+            value = excluded.value,
+            updated_at = excluded.updated_at
+        """,
+        (key, str(value), now),
+    )
 
 def main():
     """Creates data/gtfs.db with the four pipeline tables (--reset wipes it first)."""
