@@ -1,5 +1,5 @@
-# Student Name: [Your Name]
-# Student FAN:  [YourFAN]
+# Student Name: Joel Bates
+# Student FAN:  BATE0218
 # File:         gtfs_position_collection/scheduled_times.py
 # Date:         27-09-2026
 # Description:  Loads scheduled GTFS arrivals for selected routes and stops
@@ -14,10 +14,30 @@ from pathlib import Path
 from zoneinfo import ZoneInfo
 
 import pandas as pd
-
+import sqlite3
+from data_collection_setup.main import get_state, set_state
 from shared import config
-from shared import store
 from shared import timetable
+
+
+# Used for scheduled_times
+def connect():
+    """Opens the project SQLite database.
+
+    Returns:
+        sqlite3.Connection configured to return rows by column name.
+    """
+    config.DB_PATH.parent.mkdir(parents=True, exist_ok=True)
+
+    conn = sqlite3.connect(config.DB_PATH, timeout=30)
+
+    conn.row_factory = sqlite3.Row
+
+    conn.execute(
+        "PRAGMA foreign_keys = ON"
+    )
+
+    return conn
 
 
 
@@ -473,13 +493,13 @@ def replace_schedule(conn, schedule, version, fingerprint):
 
         conn.executemany(sql, rows)
 
-        store.set_state(
+        set_state(
             conn,
             "scheduled_stop_times_version",
             version,
         )
 
-        store.set_state(
+        set_state(
             conn,
             "scheduled_selection_fingerprint",
             fingerprint,
@@ -505,12 +525,12 @@ def current_gtfs_version(conn, force_check=False):
     """
     today = current_adelaide_date()
 
-    checked_date = store.get_state(
+    checked_date = get_state(
         conn,
         "gtfs_version_checked_date",
     )
 
-    cached_version = store.get_state(
+    cached_version = get_state(
         conn,
         "remote_gtfs_version",
     )
@@ -526,13 +546,13 @@ def current_gtfs_version(conn, force_check=False):
     version = timetable.get_timetable_version()
 
     with conn:
-        store.set_state(
+        set_state(
             conn,
             "remote_gtfs_version",
             version,
         )
 
-        store.set_state(
+        set_state(
             conn,
             "gtfs_version_checked_date",
             today,
@@ -576,22 +596,21 @@ def ensure_scheduled_stop_times(
     if route_path is None:
         route_path = find_latest_file(
             config.SELECTION_DIR,
-            "top_k_routes_*",
+            "top_k_routes_*.csv",
         )
 
     if stop_path is None:
         stop_path = find_latest_file(
             config.SELECTION_DIR,
-            "top_m_stops_*",
+            "top_m_stops_*.csv",
         )
 
     route_path = Path(route_path)
     stop_path = Path(stop_path)
 
-    conn = store.connect()
+    conn = connect()
 
     try:
-        store.initialise_database(conn)
 
         # Daily remote timetable version check
         version = current_gtfs_version(
@@ -607,12 +626,12 @@ def ensure_scheduled_stop_times(
             stop_path,
         )
 
-        loaded_version = store.get_state(
+        loaded_version = get_state(
             conn,
             "scheduled_stop_times_version",
         )
 
-        loaded_fingerprint = store.get_state(
+        loaded_fingerprint = get_state(
             conn,
             "scheduled_selection_fingerprint",
         )

@@ -1,5 +1,5 @@
-# Student Name: [Your Name]
-# Student FAN:  [YourFAN]
+# Student Name: Joel Bates
+# Student FAN:  BATE0218
 # File:         shared/timetable.py
 # Date:         27-09-2026
 # Description:  Static GTFS timetable download, version management, and route loading.
@@ -129,18 +129,18 @@ def read_gtfs(source, name, columns=None):
     return pd.read_csv(source / name, dtype=str, encoding="utf-8-sig", usecols=columns)
 
 
-def count_trips_by_route_on_date(metro_timetable_path, day):
-    """Counts bus trips per base route that run on one date.
+def find_service_ids_running_on_date(metro_timetable_path, day):
+    """Finds the GTFS service_ids that run on one date.
 
     A service runs if calendar.txt covers the date and weekday, adjusted by
     the one-off additions (1) and removals (2) in calendar_dates.txt.
 
     Args:
         metro_timetable_path: Path to the timetable folder or zip (see read_gtfs).
-        day: datetime.date or pd.Timestamp to count.
+        day: datetime.date or pd.Timestamp.
 
     Returns:
-        Series of trip counts indexed by base route.
+        Set of service_id strings.
     """
     ymd = day.strftime("%Y%m%d")
     cal = read_gtfs(metro_timetable_path, "calendar.txt")
@@ -157,6 +157,20 @@ def count_trips_by_route_on_date(metro_timetable_path, day):
         exceptions.service_id[exceptions.exception_type == config.SERVICE_ADDED])
     services -= set(
         exceptions.service_id[exceptions.exception_type == config.SERVICE_REMOVED])
+    return services
+
+
+def count_trips_by_route_on_date(metro_timetable_path, day):
+    """Counts bus trips per base route that run on one date.
+
+    Args:
+        metro_timetable_path: Path to the timetable folder or zip (see read_gtfs).
+        day: datetime.date or pd.Timestamp to count.
+
+    Returns:
+        Series of trip counts indexed by base route.
+    """
+    services = find_service_ids_running_on_date(metro_timetable_path, day)
 
     # Count trips for those services, grouped by base route.
     routes = read_gtfs(metro_timetable_path, "routes.txt")

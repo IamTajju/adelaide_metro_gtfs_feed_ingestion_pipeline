@@ -32,6 +32,10 @@ Database and Stage 3 commands:
 
 - `venv/bin/python -m data_collection_setup`: creates `data/gtfs.db` with the four tables below. Re-runs keep existing
   rows; `--reset` deletes the database first (wipes every collected position).
+- `make collect`: polls the live feed every 15 s (its refresh rate) from 30 min before the first to 30 min after the
+  last scheduled bus of the chosen routes at the chosen stops. Unchanged snapshots are skipped; buses of chosen routes
+  within 500 m of a chosen stop go into `positions`. Logs to `data/logs/collector.log`; Ctrl+C stops it.
+  `python -m gtfs_position_collection --once` polls once, ignoring the window (for testing).
 - `venv/bin/python -m gtfs_position_collection.arrivals`: fills `arrivals` from the stored positions (closest ping to
   each chosen stop per trip and day, next to its scheduled time). Safe to re-run.
 
@@ -73,7 +77,9 @@ select_stops/                Stage 2
   selection.py               top n stops per route + N/E/S/W quadrant swap → top m stops
   plots.py                   CBD stop map
 gtfs_position_collection/    Stage 3
-  main.py                    polling loop: fetch → filter → validate → store (TODO, T08)
+  main.py                    polling loop: fetch → skip unchanged → filter → store (validate: TODO, T07)
+  feed.py                    live vehicle_positions feed → positions rows
+  collection_window.py       first to last scheduled chosen bus at chosen stops (+30 min margin)
   filters.py                 keep pings of chosen routes within 500 m of a chosen stop
   scheduled_times.py         scheduled arrivals for chosen trips × stops
   validate.py                rejection layer
@@ -81,7 +87,7 @@ gtfs_position_collection/    Stage 3
   anomalies.py               post-collection flags
 weather_collection/          Stage 4
   main.py                    Open-Meteo hourly
-tests/                       filter and arrivals tests (rejection layer tests: TODO, T07)
+tests/                       collector, filter, arrivals and weather tests (rejection layer: TODO, T07)
 ```
 
 ## Setup and run

@@ -5,6 +5,9 @@
 # Description:  Database setup driver: creates data/gtfs.db with routes, stops, positions and arrivals.
 # Usage:        python -m data_collection_setup [--reset]
 """Database setup driver: creates data/gtfs.db with routes, stops, positions and arrivals.
+# Description:  Database setup driver: creates data/gtfs.db with routes, stops, positions and arrivals.
+# Usage:        python -m data_collection_setup [--reset]
+Database setup driver: creates data/gtfs.db with routes, stops, positions and arrivals.
   - Creates data/ if it is missing (shared/config.py)
   - Creates (or reuses) the SQLite file config.DB_PATH (data/gtfs.db)
   - Creates the four pipeline tables if they do not exist yet:
@@ -31,10 +34,7 @@ Relationships (one-to-many; no junction tables needed):
                             under an earlier selection survive a new one.
 
 Writers should run "PRAGMA foreign_keys = ON" on their connection, SQLite only
-enforces foreign keys per connection. Replacing the selection therefore has a
-fixed order: delete stops, then routes; insert routes, then stops. Positions
-point at routes too, so a route that already has positions cannot be deleted;
-reset the database (--reset) to start a collection with a new selection.
+enforces foreign keys per connection.
 """
 
 import argparse
@@ -248,6 +248,10 @@ def create_database(db_path=DB_PATH, reset=False):
     """Creates the four pipeline tables in db_path if they do not exist yet.
 
     Existing tables and rows are kept, so a re-run never loses collected data.
+def create_database(db_path=DB_PATH, reset=False):
+    Creates the four pipeline tables in db_path if they do not exist yet.
+
+    Existing tables and rows are kept, so a re-run never loses collected data.
 
     Args:
         db_path: Path of the SQLite file to create or reuse.
@@ -278,6 +282,166 @@ def create_database(db_path=DB_PATH, reset=False):
         conn.execute(QUARANTINE_TRIP_INDEX)
         conn.execute(QUARANTINE_TIMESTAMP_INDEX)
     return db_path
+
+
+ROUTES_COLUMNS = ["route", "cbd_boardings", "gtfs_route_ids", "weekday_trips",
+                  "boardings_rank", "trips_rank", "score", "direction"]
+STOPS_COLUMNS = ["route", "stop_id", "stop_name", "stop_lat", "stop_lon", "stop_boardings",
+                 "quadrant", "stop_rank_on_route", "chosen_by"]
+POSITIONS_COLUMNS = ["entity_id", "position_bearing", "position_latitude", "position_longitude",
+                     "position_speed", "timestamp", "trip_direction_id", "route", "trip_route_id",
+                     "trip_schedule_relationship", "trip_start_date", "trip_trip_id",
+                     "vehicle_id", "vehicle_label"]
+
+
+def convert_to_database_rows(frame, columns):
+    """Turns DataFrame rows into plain Python tuples sqlite3 can bind (NaN -> NULL)."""
+    plain_frame = frame[columns].astype(object)
+    return plain_frame.where(plain_frame.notna(), None).itertuples(index=False, name=None)
+
+
+def replace_rows_in_database(table, frame, columns, tables_to_clear_first, db_path=DB_PATH):
+    """Replaces every row of a selection table in one transaction.
+
+    Creates the tables first if setup has not run yet. Foreign keys are on, so
+    dependent tables (tables_to_clear_first) are emptied before the table itself.
+
+    Raises:
+        RuntimeError: if a foreign key fails, i.e. collected positions still point
+            at the old selection, or a stop's route is not in the routes table.
+    """
+    create_database(db_path)
+    conn = sqlite3.connect(db_path)
+    try:
+        conn.execute("PRAGMA foreign_keys = ON")
+        with conn:  # One transaction: all of it, or none of it on an error.
+            for dependent_table in tables_to_clear_first:
+                conn.execute("DELETE FROM %s" % dependent_table)
+            conn.execute("DELETE FROM %s" % table)
+            conn.executemany("INSERT INTO %s (%s) VALUES (%s)" % (
+                table, ", ".join(columns), ", ".join("?" * len(columns))),
+                convert_to_database_rows(frame, columns))
+    except sqlite3.IntegrityError as error:
+        raise RuntimeError(
+            "cannot replace %s in %s (%s): either collected positions still point at "
+            "the old selection (run `python -m data_collection_setup --reset` to start "
+            "a new collection), or a stop's route is not in the routes table (run "
+            "`make route_selection` first)" % (table, db_path, error)) from error
+    finally:
+        conn.close()
+    return len(frame)
+
+
+def replace_top_k_routes_in_database(top_k_routes, db_path=DB_PATH):
+    """Writes the top k routes to the routes table, replacing the old selection.
+
+    The stops of the old routes are removed with them (stops point at routes), so
+    stop selection has to run again afterwards; `make selection` does that.
+
+    Args:
+        top_k_routes: DataFrame with the ROUTES_COLUMNS (route_selection output).
+        db_path: Path of the SQLite file.
+
+    Returns:
+        Number of routes written.
+    """
+    return replace_rows_in_database("routes", top_k_routes, ROUTES_COLUMNS,
+                                    tables_to_clear_first=["stops"], db_path=db_path)
+
+
+def replace_top_m_stops_in_database(top_m_stops, db_path=DB_PATH):
+    """Writes the top m stops to the stops table, replacing the old selection.
+
+    Args:
+        top_m_stops: DataFrame with the STOPS_COLUMNS (stop_selection output); every
+            route must already be in the routes table.
+        db_path: Path of the SQLite file.
+
+    Returns:
+        Number of route x stop rows written.
+    """
+    return replace_rows_in_database("stops", top_m_stops, STOPS_COLUMNS,
+                                    tables_to_clear_first=[], db_path=db_path)
+
+
+ROUTES_COLUMNS = ["route", "cbd_boardings", "gtfs_route_ids", "weekday_trips",
+                  "boardings_rank", "trips_rank", "score", "direction"]
+STOPS_COLUMNS = ["route", "stop_id", "stop_name", "stop_lat", "stop_lon", "stop_boardings",
+                 "quadrant", "stop_rank_on_route", "chosen_by"]
+POSITIONS_COLUMNS = ["entity_id", "position_bearing", "position_latitude", "position_longitude",
+                     "position_speed", "timestamp", "trip_direction_id", "route", "trip_route_id",
+                     "trip_schedule_relationship", "trip_start_date", "trip_trip_id",
+                     "vehicle_id", "vehicle_label"]
+
+
+def convert_to_database_rows(frame, columns):
+    """Turns DataFrame rows into plain Python tuples sqlite3 can bind (NaN -> NULL)."""
+    plain_frame = frame[columns].astype(object)
+    return plain_frame.where(plain_frame.notna(), None).itertuples(index=False, name=None)
+
+
+def replace_rows_in_database(table, frame, columns, tables_to_clear_first, db_path=DB_PATH):
+    """Replaces every row of a selection table in one transaction.
+
+    Creates the tables first if setup has not run yet. Foreign keys are on, so
+    dependent tables (tables_to_clear_first) are emptied before the table itself.
+
+    Raises:
+        RuntimeError: if a foreign key fails, i.e. collected positions still point
+            at the old selection, or a stop's route is not in the routes table.
+    """
+    create_database(db_path)
+    conn = sqlite3.connect(db_path)
+    try:
+        conn.execute("PRAGMA foreign_keys = ON")
+        with conn:  # One transaction: all of it, or none of it on an error.
+            for dependent_table in tables_to_clear_first:
+                conn.execute("DELETE FROM %s" % dependent_table)
+            conn.execute("DELETE FROM %s" % table)
+            conn.executemany("INSERT INTO %s (%s) VALUES (%s)" % (
+                table, ", ".join(columns), ", ".join("?" * len(columns))),
+                convert_to_database_rows(frame, columns))
+    except sqlite3.IntegrityError as error:
+        raise RuntimeError(
+            "cannot replace %s in %s (%s): either collected positions still point at "
+            "the old selection (run `python -m data_collection_setup --reset` to start "
+            "a new collection), or a stop's route is not in the routes table (run "
+            "`make route_selection` first)" % (table, db_path, error)) from error
+    finally:
+        conn.close()
+    return len(frame)
+
+
+def replace_top_k_routes_in_database(top_k_routes, db_path=DB_PATH):
+    """Writes the top k routes to the routes table, replacing the old selection.
+
+    The stops of the old routes are removed with them (stops point at routes), so
+    stop selection has to run again afterwards; `make selection` does that.
+
+    Args:
+        top_k_routes: DataFrame with the ROUTES_COLUMNS (route_selection output).
+        db_path: Path of the SQLite file.
+
+    Returns:
+        Number of routes written.
+    """
+    return replace_rows_in_database("routes", top_k_routes, ROUTES_COLUMNS,
+                                    tables_to_clear_first=["stops"], db_path=db_path)
+
+
+def replace_top_m_stops_in_database(top_m_stops, db_path=DB_PATH):
+    """Writes the top m stops to the stops table, replacing the old selection.
+
+    Args:
+        top_m_stops: DataFrame with the STOPS_COLUMNS (stop_selection output); every
+            route must already be in the routes table.
+        db_path: Path of the SQLite file.
+
+    Returns:
+        Number of route x stop rows written.
+    """
+    return replace_rows_in_database("stops", top_m_stops, STOPS_COLUMNS,
+                                    tables_to_clear_first=[], db_path=db_path)
 
 
 ROUTES_COLUMNS = ["route", "cbd_boardings", "gtfs_route_ids", "weekday_trips",
@@ -385,6 +549,7 @@ def set_state(conn, key, value):
 
 def main():
     """Creates data/gtfs.db with the four pipeline tables (--reset wipes it first)."""
+
     parser = argparse.ArgumentParser(description="Create the pipeline database tables.")
     parser.add_argument("--reset", action="store_true",
                         help="delete data/gtfs.db first (wipes collected positions)")
