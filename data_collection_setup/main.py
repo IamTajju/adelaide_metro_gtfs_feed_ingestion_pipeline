@@ -173,6 +173,10 @@ ROUTES_COLUMNS = ["route", "cbd_boardings", "gtfs_route_ids", "weekday_trips",
                   "boardings_rank", "trips_rank", "score", "direction"]
 STOPS_COLUMNS = ["route", "stop_id", "stop_name", "stop_lat", "stop_lon", "stop_boardings",
                  "quadrant", "stop_rank_on_route", "chosen_by"]
+POSITIONS_COLUMNS = ["entity_id", "position_bearing", "position_latitude", "position_longitude",
+                     "position_speed", "timestamp", "trip_direction_id", "route", "trip_route_id",
+                     "trip_schedule_relationship", "trip_start_date", "trip_trip_id",
+                     "vehicle_id", "vehicle_label"]
 
 
 def convert_to_database_rows(frame, columns):

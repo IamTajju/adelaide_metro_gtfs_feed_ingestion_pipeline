@@ -17,11 +17,22 @@ DB_PATH = DATA_DIR / "gtfs.db"  # The one SQLite database every stage shares.
 TIMETABLE_DIR = DATA_DIR / "timetable"
 METRO_TAPS_DIR = DATA_DIR / "validations"
 SELECTION_DIR = DATA_DIR / "selection"
+LOG_DIR = DATA_DIR / "logs"
 
 # Static GTFS: Adelaide Metro timetables and stop/route data.
 GTFS_BASE = "https://gtfs.adelaidemetro.com.au/v1"
 GTFS_STATIC = GTFS_BASE + "/static/latest/google_transit.zip"
 GTFS_VERSION = GTFS_BASE + "/static/latest/version.txt"
+
+# Real-time vehicle positions. The feed header timestamp moves every 15 s
+# (measured 07-10-2026), so polling faster only re-reads the same snapshot.
+LIVE_FEED_URL = GTFS_BASE + "/realtime/vehicle_positions"
+LIVE_POLL_SECONDS = 15
+# Collect from the first to the last scheduled bus at the chosen stops, widened
+# by this margin so early and late buses near the stops are still recorded.
+COLLECTION_MARGIN_MINUTES = 30
+# While outside the collection window, check again this often.
+OUTSIDE_WINDOW_CHECK_SECONDS = 300
 
 # Demand data: Adelaide Metro banded Metrocard validations (data.sa.gov.au).
 VALIDATIONS_API = ("https://data.sa.gov.au/data/api/3/action/package_show"
