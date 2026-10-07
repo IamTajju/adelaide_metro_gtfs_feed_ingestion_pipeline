@@ -1,5 +1,5 @@
-# Student Name: Tahzeeb Ahmed
-# Student FAN:  ahme0423
+# Student Name: Mauro Turci
+# Student FAN:  turc0022
 # File:         gtfs_position_collection/collection_window.py
 # Date:         07-10-2026
 # Description:  When to collect: first to last scheduled bus of the chosen routes at the chosen stops.
@@ -42,7 +42,8 @@ def find_scheduled_window_seconds(service_day, chosen_route_ids, chosen_stop_ids
         Tuple (first_seconds, last_seconds) after the service day starts, or
         None when none of the chosen trips run that day.
     """
-    services = find_service_ids_running_on_date(metro_timetable_path, service_day)
+    services = find_service_ids_running_on_date(
+        metro_timetable_path, service_day)
     trips = read_gtfs(metro_timetable_path, "trips.txt",
                       columns=["route_id", "service_id", "trip_id"])
     chosen_trip_ids = set(trips.trip_id[trips.route_id.isin(chosen_route_ids)
@@ -76,7 +77,8 @@ class CollectionWindow:
                 service_day, self.chosen_route_ids, self.chosen_stop_ids,
                 self.metro_timetable_path)
             if window is not None:
-                window = (window[0] - self.margin_seconds, window[1] + self.margin_seconds)
+                window = (window[0] - self.margin_seconds,
+                          window[1] + self.margin_seconds)
             self.windows_by_service_day[service_day] = window
         return self.windows_by_service_day[service_day]
 
@@ -91,8 +93,10 @@ class CollectionWindow:
             window = self.get_window_seconds(service_day)
             if window is None:
                 continue
-            service_day_start = datetime.combine(service_day, datetime.min.time(), now.tzinfo)
-            seconds_into_service_day = (now - service_day_start).total_seconds()
+            service_day_start = datetime.combine(
+                service_day, datetime.min.time(), now.tzinfo)
+            seconds_into_service_day = (
+                now - service_day_start).total_seconds()
             if window[0] <= seconds_into_service_day <= window[1]:
                 return True
         return False
