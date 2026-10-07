@@ -22,6 +22,7 @@ pandas==3.0.6
 pillow==12.3.0
 protobuf==7.36.1
 pyparsing==3.3.3
+pytest==9.1.1
 python-dateutil==2.9.0.post0
 rasterio==1.5.2
 requests==2.34.2

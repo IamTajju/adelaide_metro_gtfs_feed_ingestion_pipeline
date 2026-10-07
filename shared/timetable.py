@@ -1,5 +1,5 @@
-# Student Name: [Your Name]
-# Student FAN:  [YourFAN]
+# Student Name: Joel Bates
+# Student FAN:  BATE0218
 # File:         shared/timetable.py
 # Date:         27-09-2026
 # Description:  Static GTFS timetable download, version management, and route loading.

@@ -17,8 +17,6 @@ The chosen routes and stops are read once, at start, from the routes and stops
 tables (`make selection` fills them). Each poll is logged to
 data/logs/collector.log; an error is logged and the loop carries on, so one
 network blip never ends a collection day. Stop it with Ctrl+C.
-
-TODO: T07 rejection layer (validate.py) between steps 3 and 4.
 """
 
 import argparse
@@ -28,9 +26,10 @@ import time
 from datetime import datetime
 
 from data_collection_setup.main import POSITIONS_COLUMNS, create_database
-from gtfs_position_collection import filters
+from gtfs_position_collection import filters, validate
 from gtfs_position_collection.collection_window import ADELAIDE_TZ, CollectionWindow
 from gtfs_position_collection.feed import fetch_vehicle_positions
+from gtfs_position_collection.scheduled_times import ensure_scheduled_stop_times
 from shared import config
 
 logger = logging.getLogger("collector")
@@ -88,7 +87,7 @@ def store_positions(conn, rows):
 
 
 def poll_once(conn, base_routes, stops, last_feed_timestamp):
-    """Fetches, filters and stores one snapshot of the feed, then logs what happened.
+    """Fetches, filters, validates and stores one feed snapshot.
 
     Args:
         conn: Open connection to the project database.
@@ -100,61 +99,163 @@ def poll_once(conn, base_routes, stops, last_feed_timestamp):
         The header timestamp of this poll.
     """
     feed_timestamp, rows = fetch_vehicle_positions()
+
+    # Do not process exactly the same feed snapshot twice.
     if feed_timestamp == last_feed_timestamp:
-        logger.info("feed unchanged (header %d), skipped", feed_timestamp)
+        logger.info(
+            "feed unchanged (header %d), skipped",
+            feed_timestamp,
+        )
         return feed_timestamp
+
+    # Only keeps rows that match selection.
     relevant_rows = filters.keep_relevant(rows, base_routes, stops)
-    stored = store_positions(conn, relevant_rows)
-    logger.info("feed %d: %d vehicles, %d near chosen stops, %d new rows stored",
-                feed_timestamp, len(rows), len(relevant_rows), stored)
+
+    # Call the validation layer
+    # Bad rows are written to quarantine; only good rows continue.
+    valid_rows, quarantined = validate.validate_positions(relevant_rows, conn)
+
+    # Existing duplicate vehicle/timestamp observations are ignored.
+    stored = store_positions(conn, valid_rows)
+
+    logger.info(
+        (
+            "feed %d: %d vehicles, "
+            "%d near chosen stops, "
+            "%d valid, "
+            "%d quarantined, "
+            "%d new rows stored"
+        ),
+        feed_timestamp,
+        len(rows),
+        len(relevant_rows),
+        len(valid_rows),
+        quarantined,
+        stored,
+    )
+
     return feed_timestamp
 
+# Used by scheduled time 
+def connect():
+    """Opens the SQL database
+
+    Returns:
+        sqlite3.Connection configured to return rows by column name.
+    """
+    config.DB_PATH.parent.mkdir(parents=True, exist_ok=True)
+
+    conn = sqlite3.connect(config.DB_PATH, timeout=30)
+    conn.row_factory = sqlite3.Row
+
+    return conn
 
 def main():
-    """Polls the live feed into the positions table while the collection window is open."""
+    """Polls live positions while the collection window is open."""
     parser = argparse.ArgumentParser(
-        description="Collect live positions of the chosen routes.")
-    parser.add_argument("--once", action="store_true",
-                        help="poll once and exit, ignoring the collection window (for testing)")
+        description="Collect live positions of the chosen routes."
+    )
+
+    parser.add_argument(
+        "--once",
+        action="store_true",
+        help=(
+            "poll once and exit, ignoring the collection window "
+            "(for testing)"
+        ),
+    )
+
     args = parser.parse_args()
+
     set_up_logging()
 
-    # Creates the tables if setup has not run; never deletes rows.
+    # Create core database tables if setup has not already done so.
     create_database(config.DB_PATH)
-    conn = sqlite3.connect(config.DB_PATH)
-    conn.execute("PRAGMA foreign_keys = ON")
+
+    # Ensure the current static GTFS timetable and scheduled_stop_times
+    # are ready before realtime validation begins.
+    schedule_info = ensure_scheduled_stop_times()
+
+    logger.info(
+        "static schedule ready: %d rows, GTFS version %s",
+        schedule_info["rows"],
+        schedule_info["gtfs_version"],
+    )
+
+    conn = connect()
+
     try:
-        base_routes, variant_route_ids, stops = load_chosen_route_ids_and_stops(
-            conn)
-        logger.info("collecting routes %s near %d stops into %s",
-                    " ".join(sorted(base_routes)), len(stops), config.DB_PATH)
+        base_routes, variant_route_ids, stops = (load_chosen_route_ids_and_stops(conn))
+
+        logger.info(
+            "collecting routes %s near %d stops into %s",
+            " ".join(sorted(base_routes)),
+            len(stops),
+            config.DB_PATH,
+        )
+
         if args.once:
-            poll_once(conn, base_routes, stops, last_feed_timestamp=None)
+            poll_once(
+                conn,
+                base_routes,
+                stops,
+                last_feed_timestamp=None,
+            )
             return
 
         window = CollectionWindow(
-            variant_route_ids, {stop_id for stop_id, _, _ in stops})
-        last_feed_timestamp, was_open = None, None
+            variant_route_ids,
+            {
+                stop_id
+                for stop_id, _, _ in stops
+            },
+        )
+
+        last_feed_timestamp = None
+        was_open = None
+
         while True:
             is_open = window.is_open()
+
             if is_open != was_open:
                 today = datetime.now(ADELAIDE_TZ).date()
-                logger.info("collection window %s; today %s", "open" if is_open else "closed",
-                            window.describe(today))
+
+                logger.info(
+                    "collection window %s; today %s",
+                    "open" if is_open else "closed",
+                    window.describe(today),
+                )
+
                 was_open = is_open
+
             if not is_open:
-                time.sleep(config.OUTSIDE_WINDOW_CHECK_SECONDS)
+                time.sleep(
+                    config.OUTSIDE_WINDOW_CHECK_SECONDS
+                )
                 continue
+
             poll_started = time.monotonic()
+
             try:
                 last_feed_timestamp = poll_once(
-                    conn, base_routes, stops, last_feed_timestamp)
-            except Exception:  # Never crash: log it and try again next poll.
+                    conn,
+                    base_routes,
+                    stops,
+                    last_feed_timestamp,
+                )
+
+            except Exception:
+                # One bad HTTP request/database operation should not end
+                # an entire day's collection.
                 logger.exception("poll failed")
-            time.sleep(max(0.0, config.LIVE_POLL_SECONDS -
-                       (time.monotonic() - poll_started)))
+
+            elapsed = time.monotonic() - poll_started
+
+            time.sleep(max(0.0, config.LIVE_POLL_SECONDS - elapsed))
+
     except KeyboardInterrupt:
         logger.info("stopped by user")
+
     finally:
         conn.close()
 

@@ -11,7 +11,10 @@ TODO: rest of T01 (see docs/TICKETS.md).
 
 from pathlib import Path
 
+LOCAL_TIMEZONE = "Australia/Adelaide"
+
 # Paths
+ROOT = Path(__file__).resolve().parents[1]
 DATA_DIR = Path(__file__).resolve().parent.parent / "data"
 DB_PATH = DATA_DIR / "gtfs.db"  # The one SQLite database every stage shares.
 TIMETABLE_DIR = DATA_DIR / "timetable"
@@ -49,6 +52,12 @@ CBD_EAST = 138.6104
 VICTORIA_SQUARE_LAT = -34.9285
 VICTORIA_SQUARE_LON = 138.6007
 
+# Maximum broad rectangular bounding area for position coordinates to be considered valid (in SA)
+SA_LAT_MIN = -38.1
+SA_LAT_MAX = -25.9
+SA_LON_MIN = 128.9
+SA_LON_MAX = 141.1
+
 # GTFS constants
 # route_type for bus in GTFS (3=bus, 4=tram, 5=train, etc.)
 BUS_ROUTE_TYPE = "3"
@@ -71,3 +80,9 @@ DIRECTIONS = "NESW"
 
 # Stop selection
 N_STOPS_PER_ROUTE = 3  # Top stops per chosen route by boardings on that route.
+
+# Seconds before vehicle position data is considered old
+POSITION_MAX_AGE_SECONDS = 90
+
+# Allow a small tolerance for clock disalignment between feed and ingestion pipeline
+POSITION_FUTURE_TOLERANCE_SECONDS = 10
