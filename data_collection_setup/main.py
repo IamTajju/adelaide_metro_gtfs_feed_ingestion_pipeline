@@ -3,7 +3,7 @@
 # File:         data_collection_setup/main.py
 # Date:         06-10-2026
 # Description:  Database setup driver: creates data/gtfs.db with routes, stops and positions.
-# Usage:        python -m data_collection_setup
+# Usage:        python -m data_collection_setup [--reset]
 """Database setup driver: creates data/gtfs.db with routes, stops and positions.
   - Creates data/ if it is missing (shared/config.py)
   - Creates (or reuses) the SQLite file data/gtfs.db
@@ -11,21 +11,24 @@
       routes    - the selected routes: demand, timetable, ranks, score and direction
       stops     - the chosen stops per route: boardings, quadrant and rank
       positions - the live vehicle pings collected by the polling loop
-  - Deletes any previous data/gtfs.db (with its -wal and -shm sidecars) first, so
-    every run starts from an empty database holding only these three tables.
+  - Re-runs are safe: existing tables and their rows are left untouched.
+    --reset deletes data/gtfs.db (with its -wal and -shm sidecars) first, which
+    also wipes every collected position; use it only to start a collection over.
 
 Relationships (one-to-many; no junction tables needed):
   routes 1 --- n stops     stops.route  -> routes.route, NOT NULL: every stop row
                             belongs to exactly one route (a physical stop may still
                             be chosen by two routes, so the key is (route, stop_id)).
-  routes 1 --- n positions positions.trip_route_id -> routes.route: a ping belongs
-                            to at most one route, and trip_route_id already carries
-                            that route code.
+  routes 1 --- n positions positions.route -> routes.route: route is the base code
+                            (e.g. "G10"); trip_route_id keeps the raw GTFS id from the
+                            feed, which may be a variant such as "G10A", so it cannot be
+                            the foreign key itself.
 
 Writers should run "PRAGMA foreign_keys = ON" on their connection, SQLite only
 enforces foreign keys per connection.
 """
 
+import argparse
 import sqlite3
 from pathlib import Path
 
@@ -41,7 +44,7 @@ CREATE TABLE IF NOT EXISTS routes (
     cbd_boardings   INTEGER,
     gtfs_route_ids  TEXT,
     weekday_trips   INTEGER,
-    boarding_rank   INTEGER,
+    boardings_rank  INTEGER,
     trips_rank      INTEGER,
     score           REAL,
     direction       TEXT
@@ -66,9 +69,11 @@ CREATE TABLE IF NOT EXISTS stops (
 )
 """
 
-# Live vehicle pings: one row per polled vehicle entity per fetch.
-# trip_route_id is the route of the ping, so it doubles as the foreign key into
-# routes; it is left NULLable for pings that do not belong to a chosen route.
+# Live vehicle pings: one row per vehicle report.
+# route is the base code of trip_route_id (strip_route_variants) and is the
+# foreign key into routes; trip_route_id keeps the feed's raw (variant) id.
+# A vehicle reports the same timestamp across polls until it moves on, so
+# (vehicle_id, timestamp) is unique and the collector inserts with OR IGNORE.
 POSITIONS_DDL = """
 CREATE TABLE IF NOT EXISTS positions (
     entity_id                  TEXT,
@@ -78,12 +83,14 @@ CREATE TABLE IF NOT EXISTS positions (
     position_speed             REAL,
     timestamp                  INTEGER,
     trip_direction_id          INTEGER,
-    trip_route_id              TEXT REFERENCES routes(route),
+    route                      TEXT REFERENCES routes(route),
+    trip_route_id              TEXT,
     trip_schedule_relationship TEXT,
     trip_start_date            TEXT,
     trip_trip_id               TEXT,
     vehicle_id                 TEXT,
-    vehicle_label              TEXT
+    vehicle_label              TEXT,
+    UNIQUE (vehicle_id, timestamp)
 )
 """
 
@@ -91,7 +98,7 @@ POSITIONS_TIMESTAMP_INDEX = (
     "CREATE INDEX IF NOT EXISTS idx_positions_timestamp ON positions (timestamp)")
 
 POSITIONS_ROUTE_INDEX = (
-    "CREATE INDEX IF NOT EXISTS idx_positions_trip_route_id ON positions (trip_route_id)")
+    "CREATE INDEX IF NOT EXISTS idx_positions_route ON positions (route)")
 
 
 def delete_database(db_path=DB_PATH):
@@ -112,18 +119,22 @@ def delete_database(db_path=DB_PATH):
     return removed
 
 
-def create_database(db_path=DB_PATH):
-    """Deletes db_path if it exists, then creates it with the three pipeline tables.
+def create_database(db_path=DB_PATH, reset=False):
+    """Creates the three pipeline tables in db_path if they do not exist yet.
+
+    Existing tables and rows are kept, so a re-run never loses collected data.
 
     Args:
-        db_path: Path of the SQLite file to (re)create.
+        db_path: Path of the SQLite file to create or reuse.
+        reset: If True, delete db_path (and its sidecars) first.
 
     Returns:
         Path: the path of the database file.
     """
     db_path = Path(db_path)
     db_path.parent.mkdir(parents=True, exist_ok=True)
-    delete_database(db_path)
+    if reset:
+        delete_database(db_path)
     with sqlite3.connect(db_path) as conn:
         conn.execute(ROUTES_DDL)
         conn.execute(STOPS_DDL)
@@ -134,14 +145,25 @@ def create_database(db_path=DB_PATH):
 
 
 def main():
-    """Recreates data/gtfs.db with the three pipeline tables and lists them."""
-    replaced = DB_PATH.exists()
-    db_path = create_database()
+    """Creates data/gtfs.db with the three pipeline tables (--reset wipes it first)."""
+    parser = argparse.ArgumentParser(description="Create the pipeline database tables.")
+    parser.add_argument("--reset", action="store_true",
+                        help="delete data/gtfs.db first (wipes collected positions)")
+    args = parser.parse_args()
+
+    existed = DB_PATH.exists()
+    db_path = create_database(reset=args.reset)
     with sqlite3.connect(db_path) as conn:
         tables = [row[0] for row in conn.execute(
             "SELECT name FROM sqlite_master WHERE type = 'table' AND name IN "
             "('routes', 'stops', 'positions') ORDER BY name")]
-    print("%s %s" % ("recreated" if replaced else "created", db_path))
+    if args.reset and existed:
+        action = "recreated"
+    elif existed:
+        action = "kept existing tables in"
+    else:
+        action = "created"
+    print("%s %s" % (action, db_path))
     print("tables: %s" % ", ".join(tables))
 
 
