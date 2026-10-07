@@ -6,8 +6,8 @@
 # Usage:        make route_selection  (or python -m select_routes.selection)
 """Picks the top-k routes by weighted rank with N/E/S/W coverage.
 
-Reads the latest route_candidates CSV and writes data/selection/top_k_routes_<timestamp>.csv
-plus a map of the chosen routes.
+Reads the latest route_candidates CSV and writes data/selection/top_k_routes_<timestamp>.csv,
+the routes table of data/gtfs.db, and a map of the chosen routes.
 """
 
 from datetime import datetime
@@ -15,6 +15,7 @@ from datetime import datetime
 import numpy as np
 import pandas as pd
 
+from data_collection_setup.main import replace_top_k_routes_in_database
 from shared import config
 from shared.timetable import get_primary_route_shapes
 from select_routes.plots import get_latest_route_candidates, draw_route_map
@@ -89,8 +90,12 @@ def main():
 
     stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
     path = config.SELECTION_DIR / ("top_k_routes_%s.csv" % stamp)
-    ranked[ranked.chosen].drop(columns="chosen").to_csv(path, index=False)
+    top_k_routes = ranked[ranked.chosen].drop(columns="chosen")
+    top_k_routes.to_csv(path, index=False)
     print("wrote %s" % path)
+    # The database copy the collector reads; it replaces the previous selection.
+    routes_written = replace_top_k_routes_in_database(top_k_routes)
+    print("wrote %d routes to %s (routes table)" % (routes_written, config.DB_PATH))
     map_path = config.SELECTION_DIR / ("top_k_routes_map_%s.png" % stamp)
     draw_route_map(
         path, map_path, title="Top %d bus routes" % config.K_ROUTES)

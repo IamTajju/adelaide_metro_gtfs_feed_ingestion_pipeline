@@ -7,8 +7,8 @@
 """Picks the top n CBD stops per route with N/E/S/W quadrant coverage.
 
 Reads the latest stop_candidates CSV and writes data/selection/top_m_stops_<timestamp>.csv
-(one row per route x chosen stop; m = the number of unique stops), plus a CBD map
-of the chosen stops coloured by quadrant.
+(one row per route x chosen stop; m = the number of unique stops), the stops table
+of data/gtfs.db, and a CBD map of the chosen stops coloured by quadrant.
 """
 
 from datetime import datetime
@@ -16,6 +16,7 @@ from datetime import datetime
 import numpy as np
 import pandas as pd
 
+from data_collection_setup.main import replace_top_m_stops_in_database
 from shared import config
 from select_stops.plots import draw_top_stops_cbd_map
 
@@ -133,6 +134,9 @@ def main():
     path = config.SELECTION_DIR / ("top_m_stops_%s.csv" % stamp)
     top_stops.to_csv(path, index=False)
     print("wrote %s" % path)
+    # The database copy the collector reads; it replaces the previous selection.
+    stops_written = replace_top_m_stops_in_database(top_stops)
+    print("wrote %d route x stop rows to %s (stops table)" % (stops_written, config.DB_PATH))
 
     # Draw the chosen stops on a CBD map, coloured by quadrant.
     map_path = config.SELECTION_DIR / ("top_m_stops_map_%s.png" % stamp)
