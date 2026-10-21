@@ -15,6 +15,10 @@ When the day already has pings in the positions table, only the hours of that
 collection window are stored. Without pings the whole day is kept, so the
 table is still fillable before the collector has run.
 
+The collector also calls store_window_weather as each collection window
+closes, so the weather of a window is stored the same day; this command
+backfills any day or window the collector missed.
+
 The rows come from the forecast endpoint with a start and end date instead
 of the ERA5 archive endpoint, because the archive lags a few days behind the
 present and returns empty values for yesterday.
@@ -122,6 +126,30 @@ def collection_hours(conn, day):
         return None
     return {datetime.fromtimestamp(stamp, LOCAL_TZ).strftime("%Y-%m-%dT%H:00")
             for (stamp,) in stamps}
+
+
+def window_hours(day, start, end):
+    """Returns the "YYYY-MM-DDTHH:00" hours a ("HH:MM", "HH:MM") window touches.
+
+    For 07:00-09:00 that is 07:00 and 08:00; a window ending at 09:30 adds 09:00.
+    """
+    first_hour = int(start[:2])
+    last_hour = int(end[:2]) if end[3:] != "00" else int(end[:2]) - 1
+    return {"%sT%02d:00" % (day.isoformat(), hour) for hour in range(first_hour, last_hour + 1)}
+
+
+def store_window_weather(conn, day, start, end):
+    """Fetches and stores the hourly weather of one collection window.
+
+    Args:
+        conn: Open connection to the project database.
+        day: datetime.date of the window (Adelaide).
+        start, end: "HH:MM" bounds of the window.
+
+    Returns:
+        Number of rows written.
+    """
+    return store_rows(conn, rows_from_payload(fetch_hourly(day), window_hours(day, start, end)))
 
 
 def store_rows(conn, rows):

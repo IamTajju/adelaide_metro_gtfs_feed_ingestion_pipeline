@@ -1,8 +1,15 @@
 # Pipeline commands. Run from the repository root.
+# Windows keeps the venv's Python in Scripts\ and has no python3 command.
+ifeq ($(OS),Windows_NT)
+PYTHON = venv/Scripts/python
+SYSTEM_PYTHON = python
+else
 PYTHON = venv/bin/python
+SYSTEM_PYTHON = python3
+endif
 
 .PHONY: help install setup selection route_candidates route_selection stop_candidates stop_selection \
-	collect schedule arrivals weather test
+	collect schedule arrivals weather check backup test
 
 # Default target: list the commands (plain `make` downloads nothing).
 help:
@@ -16,12 +23,14 @@ help:
 	@echo "make collect           poll live positions of the chosen routes into data/gtfs.db (Ctrl+C to stop)"
 	@echo "make schedule          rebuild scheduled_stop_times now (the collector also does it daily)"
 	@echo "make arrivals          observed vs scheduled arrivals from the stored positions"
-	@echo "make weather           hourly weather for yesterday (or DAY=YYYY-MM-DD)"
+	@echo "make weather           backfill hourly weather for yesterday (or DAY=YYYY-MM-DD); the collector stores it per window"
+	@echo "make check             rows stored per collection window yesterday (or DAY=YYYY-MM-DD)"
+	@echo "make backup            dated copy of data/gtfs.db in data/backups (or DEST=folder)"
 	@echo "make test              run the test suite"
 
 # Virtual environment with the pinned dependencies.
 install:
-	python3 -m venv venv
+	$(SYSTEM_PYTHON) -m venv venv
 	$(PYTHON) -m pip install -r requirements.txt
 
 # Database tables (the selection and collector also create them when missing).
@@ -62,6 +71,14 @@ arrivals:
 # Stage 4: hourly weather for one day (default yesterday): make weather DAY=2026-10-07
 weather:
 	$(PYTHON) -m weather_collection $(DAY)
+
+# After each collection day: what each window stored (exits 1 if a window is empty).
+check:
+	$(PYTHON) -m gtfs_position_collection.check $(DAY)
+
+# Safe copy of the database while the collector runs: make backup DEST=/path/to/other/disk
+backup:
+	$(PYTHON) -m data_collection_setup.backup $(DEST)
 
 test:
 	$(PYTHON) -m pytest tests

@@ -21,7 +21,7 @@ Stage 4  weather    Open-Meteo hourly weather for the collection hours          
 - **Python 3.12 or newer** (`python3 --version`); the pinned numpy needs 3.12.
 - **make**, to use the `make` commands (optional; every command also has a plain Python form).
   macOS: `xcode-select --install`. Linux: usually installed (`sudo apt install make` otherwise).
-  Windows: use the Python commands.
+  Windows: use the Python commands (or install make, e.g. `choco install make`; the Makefile finds the venv's Python on Windows too).
 - **Internet access**: the timetable, Metrocard taps, live feed and weather are downloaded.
 - **About 200 MB of disk** for `data/` (timetable ≈ 80 MB, Metrocard taps ≈ 55 MB, plus the database).
 - Optional: the `sqlite3` command-line tool to look inside `data/gtfs.db`.
@@ -58,17 +58,52 @@ Run everything from the repository root, in this order.
 | 3. Collect live positions (leave running; Ctrl+C stops) | `make collect` | `python -m gtfs_position_collection` |
 | 4. Observed vs scheduled arrivals (after each collection day) | `make arrivals` | `python -m gtfs_position_collection.arrivals` |
 | Rebuild scheduled times (optional; the collector does it at start and each day) | `make schedule` | `python -m gtfs_position_collection.scheduled_times --force-reload` |
-| 5. Hourly weather (after each collection day; default yesterday) | `make weather` or `make weather DAY=2026-10-07` | `python -m weather_collection` or `python -m weather_collection 2026-10-07` |
+| 5. Hourly weather (backfill only: the collector stores each window's weather itself; default yesterday) | `make weather` or `make weather DAY=2026-10-07` | `python -m weather_collection` or `python -m weather_collection 2026-10-07` |
+| 6. Check each window stored data (each morning; default yesterday) | `make check` or `make check DAY=2026-10-07` | `python -m gtfs_position_collection.check` |
+| 7. Back up the database (each day; safe while collecting) | `make backup` or `make backup DEST=/path/to/other/disk` | `python -m data_collection_setup.backup /path/to/other/disk` |
 | Tests | `make test` | `python -m pytest tests` |
 
 `make` on its own lists the commands. Each step reads the latest output of the step before it.
 
 Useful extras:
 
-- `python -m gtfs_position_collection --once`: one poll, ignoring the collection window, to check the collector.
+- `python -m gtfs_position_collection --once`: one poll, ignoring the collection windows, to check the collector.
 - `python -m data_collection_setup --reset`: deletes `data/gtfs.db` and starts empty (wipes collected data).
-- On a Mac, keep the machine awake while collecting: `caffeinate -i make collect`.
 - Watch the collector: `tail -f data/logs/collector.log`.
+
+## Running the collector unattended (macOS, Windows, Linux)
+
+The collector is meant to run for weeks. Three things stop it silently: the computer sleeping, the
+process dying (closed terminal, logout, update reboot, power cut), and nobody noticing. Each is handled:
+
+**1. Sleep: handled by the collector.** While it runs, it asks the operating system not to sleep
+(`keep_awake.py`): `caffeinate` on macOS, `SetThreadExecutionState` on Windows, `systemd-inhibit` on
+Linux. The log says `system sleep blocked while collecting (...)`. If it says `could not block system sleep`,
+set idle sleep to *Never* by hand (macOS: System Settings → Energy; Windows: Settings → System → Power;
+Linux: Settings → Power → Automatic Suspend off). Use a desktop, or a laptop on mains power with the lid open.
+
+**2. Restarts: install the collector as a background service** (run once, from the repository root, after
+`make install` and `make selection`). It starts at login (Linux: at boot) and comes back if it stops.
+Do not also run `make collect` while the service runs.
+
+| OS | Install | Status | Remove |
+|---|---|---|---|
+| macOS | `sh deploy/macos/install_collector.sh` | `launchctl print gui/$(id -u)/au.edu.comp9742.gtfs-collector \| grep state` | `sh deploy/macos/install_collector.sh --uninstall` |
+| Windows (PowerShell) | `powershell -ExecutionPolicy Bypass -File deploy\windows\install_collector.ps1` | `Get-ScheduledTask -TaskName "GTFS collector"` | `... install_collector.ps1 -Uninstall` |
+| Linux (systemd) | `sh deploy/linux/install_collector.sh` | `systemctl --user status gtfs-collector` | `sh deploy/linux/install_collector.sh --uninstall` |
+
+- macOS: a launchd agent with `KeepAlive`; restarts 60 s after it stops.
+- Windows: a scheduled task started at logon and re-tried every 5 minutes (a running copy is left alone),
+  with no time limit. It runs while you are logged in, so set the PC to log in automatically after a
+  reboot; closing its console window stops it until the next 5-minute retry.
+- Linux: a systemd user service with `Restart=always`, kept running at boot without a login (`loginctl enable-linger`).
+- Service output goes to `data/logs/collector.service.log`; the normal log stays `data/logs/collector.log`.
+- Pause automatic OS updates for the collection period, or at least automatic restarts.
+
+**3. Noticing: check every morning** with `make check`: per window, the positions stored, distinct vehicles
+and trips, and quarantined rows. `NO DATA` on a window (exit status 1) means the collector was not
+running or the computer slept. Then `make backup DEST=...` to a second disk or synced folder: the live
+feed cannot be fetched again, so the database is the only copy.
 
 ## What each step does
 
@@ -78,17 +113,18 @@ Useful extras:
 | Top k routes | Score = 0.6 × boardings rank + 0.4 × weekday-trips rank (lower is better); the best route heading N, E, S and W from Victoria Square is taken first, then the rest by score, up to k = 5. | `top_k_routes_<ts>.csv`, map, `routes` table |
 | Stop candidates | Every CBD stop the top k routes serve (timetable: trips → stop_times → stops), with each stop's boardings on that route. | `stop_candidates_<ts>.csv` |
 | Top m stops | Top 3 stops per route by boardings, tagged N/E/S/W from Victoria Square; the best stop of any missing quadrant replaces its route's lowest pick. | `top_m_stops_<ts>.csv`, CBD map, `stops` table |
-| Collect | Every 15 s (the feed's refresh rate), from 30 min before the first to 30 min after the last scheduled chosen bus at the chosen stops: fetch, skip an unchanged snapshot, keep chosen routes within 500 m of a chosen stop, validate, store. Sleeps outside the window, so one run covers several days; checks the timetable version each new day. | `positions`, `quarantine`, `scheduled_stop_times`, `pipeline_state`, `data/logs/collector.log` |
+| Collect | Every 15 s (the feed's refresh rate), inside three daily windows (07:00–09:00, 12:00–14:00, 16:00–18:00 Adelaide time): fetch, skip an unchanged snapshot, keep chosen routes within 500 m of a chosen stop, validate, store. Sleeps between windows, so one run covers every window of every day; checks the timetable version each new day. When a window closes, stores that window's hourly weather. | `positions`, `quarantine`, `scheduled_stop_times`, `pipeline_state`, `weather_hourly`, `data/logs/collector.log` |
 | Arrivals | For each trip × chosen stop × service day, the stored ping closest to the stop is the observed arrival, next to its scheduled time (from `scheduled_stop_times`) and the ping's distance. Safe to re-run. | `arrivals` |
-| Weather | Hourly temperature, precipitation, wind speed and weather code for one day; only the collection hours when positions exist for that day. | `weather_hourly` |
+| Weather | Hourly temperature, precipitation, wind speed and weather code. The collector stores each window's hours as the window closes; `make weather` backfills one day (only its hours with positions, or the whole day if none) and refreshes them with later model values. Open-Meteo serves roughly the last two months this way. | `weather_hourly` |
 
 ## Modules
 
 ### `shared/`
-- `config.py`: every setting: URLs, data paths (`DB_PATH`, `LOG_DIR`), CBD box, Victoria Square, k / n, weights, poll interval, collection margin.
+- `config.py`: every setting: URLs, data paths (`DB_PATH`, `LOG_DIR`), CBD box, Victoria Square, k / n, weights, poll interval, collection windows.
 - `timetable.py`: downloads the static GTFS timetable when its `version.txt` changes, and reads it: `read_gtfs`, bus routes, CBD stops, services running on a date, weekday trip counts, each route's main shape.
 
 ### `data_collection_setup/`
+- `backup.py`: dated copy of the database via SQLite's backup API (consistent while the collector writes).
 - `main.py`: the database schema, `create_database` (never deletes data unless `--reset`), `connect_to_database` (the one way every stage opens the database: foreign keys on, rows by column name), and the writers that replace the `routes` and `stops` tables.
 
 ### `select_routes/` (Stage 1)
@@ -105,19 +141,22 @@ Useful extras:
 - `plots.py`: CBD map of the chosen stops coloured by quadrant.
 
 ### `gtfs_position_collection/` (Stage 3)
-- `main.py`: the collector loop: fetch → skip unchanged → filter → validate → store, one log line per poll; a failed poll is logged and undone, never fatal.
+- `main.py`: the collector loop: fetch → skip unchanged → filter → validate → store, one log line per poll; a failed poll is logged and undone, never fatal. A failed timetable refresh (also at start) is retried, not fatal.
+- `keep_awake.py`: blocks system sleep while the collector runs (macOS, Windows, Linux).
+- `check.py`: per collection window of one day: positions, vehicles, trips, quarantined; exits 1 if a window is empty.
 - `feed.py`: downloads the live `vehicle_positions` feed and turns each bus into a `positions` row.
-- `collection_window.py`: first to last scheduled arrival of the chosen routes at the chosen stops for the services running that day (± 30 min), including GTFS times past midnight.
+- `collection_window.py`: whether a daily collection window (`COLLECTION_WINDOWS`) is open, and how long until the next one opens.
 - `scheduled_times.py`: scheduled arrivals of the chosen trips at the chosen stops (`scheduled_stop_times`), built from the `routes` / `stops` tables. Checks `version.txt` at most once a day and rebuilds when the timetable or the selection changes; rows of earlier timetable versions are kept.
 - `filters.py`: keeps a bus when its base route is chosen (`G10A` → `G10`) and it is within 500 m of a chosen stop.
 - `validate.py`: rejection layer, in order: required fields; position inside South Australia; timestamp at most 90 s old and at most 10 s in the future; trip scheduled at a chosen stop. Rejected rows go to `quarantine` with the reason, details and raw row; a report the feed repeats is quarantined once.
 - `arrivals.py`: closest ping per trip × stop × day as the observed arrival, next to its scheduled time from `scheduled_stop_times` (newest timetable version if a trip appears in several).
 
 ### `weather_collection/` (Stage 4)
-- `main.py`: hourly weather from Open-Meteo for one day into `weather_hourly`.
+- `main.py`: hourly weather from Open-Meteo into `weather_hourly`: per window (`store_window_weather`, called by the collector) or for one day (`make weather`).
 
 ### Other
 - `tests/`: pytest tests.
+- `deploy/`: one installer per OS that runs the collector as a background service (see *Running the collector unattended*).
 - `fetch_gtfs.py`: standalone helper that dumps one GTFS feed (realtime or static) to CSV for inspection.
 
 ## Database: `data/gtfs.db`
@@ -131,7 +170,7 @@ Useful extras:
 | `quarantine` | rejected feed row: reason, details, raw row | `quarantine_id` | collector |
 | `arrivals` | trip × stop × service date: observed vs scheduled arrival, distance of the ping | `(trip_id, stop_id, service_date)` | arrivals |
 | `pipeline_state` | key/value notes: timetable version checked and loaded, selection fingerprint | `key` | collector |
-| `weather_hourly` | local hour: temperature, precipitation, wind speed, weather code | `hour_local` | weather |
+| `weather_hourly` | local hour: temperature, precipitation, wind speed, weather code | `hour_local` | collector (per window), weather |
 
 `positions.trip_route_id` is the feed's raw route id (e.g. `G10A`); `positions.route` is its base code (`G10`).
 Once positions exist, the selection is locked to protect them: to change routes or stops, run
@@ -143,7 +182,8 @@ Once positions exist, the selection is locked to protect them: to change routes 
 data/timetable/     static GTFS timetable (re-downloaded when its version changes)
 data/validations/   quarterly Metrocard taps CSV (cached)
 data/selection/     timestamped candidates / selection CSVs and PNG charts
-data/logs/          collector.log
+data/logs/          collector.log (+ collector.service.log when run as a service)
+data/backups/       make backup's default destination
 data/gtfs.db        the SQLite database
 ```
 
@@ -157,7 +197,7 @@ Edit `shared/config.py`:
 | `WEIGHT_BOARDINGS`, `WEIGHT_TRIPS` | 0.6, 0.4 | route score weights |
 | `N_STOPS_PER_ROUTE` | 3 | stops kept per route |
 | `LIVE_POLL_SECONDS` | 15 | time between polls (the feed refreshes every 15 s) |
-| `COLLECTION_MARGIN_MINUTES` | 30 | extra time before the first and after the last scheduled bus |
+| `COLLECTION_WINDOWS` | 07:00–09:00, 12:00–14:00, 16:00–18:00 | daily collection windows, Adelaide time |
 | `POSITION_MAX_AGE_SECONDS`, `POSITION_FUTURE_TOLERANCE_SECONDS` | 90, 10 | oldest / most-future vehicle timestamp accepted by validation |
 | `SA_LAT_MIN` … `SA_LON_MAX` | South Australia box | positions outside it are quarantined |
 

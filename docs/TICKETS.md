@@ -47,7 +47,7 @@ Bad rows → `quarantine` with the reason. One test per rule.
 **Done when:** `pytest` passes.
 
 ### [ ] T08 — Collector
-Every 30 s between the first and last scheduled bus: fetch → skip if unchanged → keep chosen
+Every 15 s inside the three daily windows (AM peak, midday, PM peak): fetch → skip if unchanged → keep chosen
 routes within 500 m of a chosen stop → validate → store. Log each fetch; never crash.
 **Done when:** a 1-hour run stores only the filtered pings.
 

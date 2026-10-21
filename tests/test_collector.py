@@ -7,7 +7,7 @@
 """Tests for the collector: feed rows, storing positions, collection window."""
 
 import sqlite3
-from datetime import date, datetime
+from datetime import datetime
 
 from google.transit import gtfs_realtime_pb2
 
@@ -66,22 +66,33 @@ def test_store_positions_ignores_a_report_already_stored(tmp_path):
     assert conn.execute("SELECT COUNT(*) FROM positions").fetchone()[0] == 2
 
 
-def test_gtfs_time_past_midnight():
-    assert collection_window.convert_gtfs_time_to_seconds("25:10:30") == 25 * 3600 + 630
+WINDOWS = [("07:00", "09:00"), ("12:00", "14:00"), ("16:00", "18:00")]
 
 
-def test_window_includes_the_tail_of_yesterday_after_midnight(monkeypatch):
-    # Every service day: 06:00 to 24:30 (00:30 the next morning).
-    monkeypatch.setattr(collection_window, "find_scheduled_window_seconds",
-                        lambda *args: (6 * 3600, 24 * 3600 + 30 * 60))
-    window = collection_window.CollectionWindow({"G10"}, {"1"}, margin_minutes=0)
-    assert window.is_open(datetime(2026, 10, 7, 12, 0, tzinfo=ADELAIDE))
-    assert window.is_open(datetime(2026, 10, 8, 0, 15, tzinfo=ADELAIDE))
-    assert not window.is_open(datetime(2026, 10, 8, 3, 0, tzinfo=ADELAIDE))
+def test_clock_time_to_seconds():
+    assert collection_window.convert_clock_time_to_seconds("16:30") == 16 * 3600 + 1800
 
 
-def test_window_is_closed_on_a_day_without_chosen_trips(monkeypatch):
-    monkeypatch.setattr(collection_window, "find_scheduled_window_seconds", lambda *args: None)
-    window = collection_window.CollectionWindow({"G10"}, {"1"})
-    assert not window.is_open(datetime(2026, 10, 7, 12, 0, tzinfo=ADELAIDE))
-    assert window.describe(date(2026, 10, 7)) == "no chosen trips run"
+def test_window_is_open_only_inside_the_three_windows():
+    window = collection_window.CollectionWindow(WINDOWS)
+    assert window.is_open(datetime(2026, 10, 7, 7, 0, tzinfo=ADELAIDE))
+    assert window.is_open(datetime(2026, 10, 7, 13, 30, tzinfo=ADELAIDE))
+    assert window.is_open(datetime(2026, 10, 7, 17, 59, tzinfo=ADELAIDE))
+    assert not window.is_open(datetime(2026, 10, 7, 9, 0, tzinfo=ADELAIDE))
+    assert not window.is_open(datetime(2026, 10, 7, 15, 0, tzinfo=ADELAIDE))
+    assert not window.is_open(datetime(2026, 10, 7, 23, 0, tzinfo=ADELAIDE))
+
+
+def test_seconds_until_the_next_window_opens():
+    window = collection_window.CollectionWindow(WINDOWS)
+    assert window.seconds_until_open(datetime(2026, 10, 7, 8, 0, tzinfo=ADELAIDE)) == 0
+    assert window.seconds_until_open(datetime(2026, 10, 7, 11, 30, tzinfo=ADELAIDE)) == 1800
+    # After the last window: tomorrow's first one.
+    assert window.seconds_until_open(datetime(2026, 10, 7, 19, 0, tzinfo=ADELAIDE)) == 12 * 3600
+    assert window.describe() == "07:00-09:00, 12:00-14:00, 16:00-18:00"
+
+
+def test_open_window_names_the_window():
+    window = collection_window.CollectionWindow(WINDOWS)
+    assert window.open_window(datetime(2026, 10, 7, 12, 30, tzinfo=ADELAIDE)) == ("12:00", "14:00")
+    assert window.open_window(datetime(2026, 10, 7, 14, 0, tzinfo=ADELAIDE)) is None

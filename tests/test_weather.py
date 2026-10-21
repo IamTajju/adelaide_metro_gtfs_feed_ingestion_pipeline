@@ -6,11 +6,15 @@
 # Usage:        python -m pytest tests
 """Tests for the hourly weather storage."""
 
+import importlib
 import sqlite3
 from datetime import date, datetime
 
 from weather_collection.main import (LOCAL_TZ, collection_hours,
-                                     rows_from_payload, store_rows)
+                                     rows_from_payload, store_rows, window_hours)
+
+# The module itself (weather_collection.main is also the name of its main()).
+weather_main = importlib.import_module("weather_collection.main")
 
 # A small fake Open-Meteo payload, three hours of one day.
 PAYLOAD = {"hourly": {
@@ -61,3 +65,17 @@ def test_collection_hours_on_a_day_without_pings(tmp_path):
     conn.execute("CREATE TABLE positions (timestamp INTEGER)")
     conn.commit()
     assert collection_hours(conn, date(2026, 9, 28)) is None
+
+
+def test_window_hours_cover_the_hours_a_window_touches():
+    assert window_hours(date(2026, 10, 7), "07:00", "09:00") == {
+        "2026-10-07T07:00", "2026-10-07T08:00"}
+    assert window_hours(date(2026, 10, 7), "16:15", "17:30") == {
+        "2026-10-07T16:00", "2026-10-07T17:00"}
+
+
+def test_window_weather_keeps_only_that_windows_hours(tmp_path, monkeypatch):
+    monkeypatch.setattr(weather_main, "fetch_hourly", lambda day: PAYLOAD)
+    conn = sqlite3.connect(tmp_path / "gtfs.db")
+    assert weather_main.store_window_weather(conn, date(2026, 9, 28), "01:00", "02:00") == 1
+    assert conn.execute("SELECT hour_local FROM weather_hourly").fetchall() == [("2026-09-28T01:00",)]

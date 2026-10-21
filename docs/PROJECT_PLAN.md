@@ -45,7 +45,7 @@ the dataset for delay prediction and weather patterns.
 ## Stage 3 — Real-time positions of those buses approaching those stops
 
 - **Frequency and periods:** poll vehicle positions at the feed's refresh rate (check it
-  once; ~30 s). Collect daily from the first to the last scheduled bus at the chosen stops.
+  once; ~30 s). Collect daily in three windows: morning peak, midday and afternoon peak.
 - **Filter:** keep a position only if it is on a chosen route **and** within 500 m of a chosen stop.
 - **Delay inputs:** store the scheduled arrival times (from the timetable) for the chosen
   trips × stops. After collection, the observed arrival = the ping closest to the stop.

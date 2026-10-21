@@ -6,8 +6,8 @@
 # Usage:        python -m gtfs_position_collection [--once]
 """Polling loop: fetch vehicle positions, filter, store (T08).
 
-Every LIVE_POLL_SECONDS, while the collection window is open (first to last
-scheduled bus of the chosen routes at the chosen stops, see collection_window):
+Every LIVE_POLL_SECONDS, while one of the daily collection windows is open
+(config.COLLECTION_WINDOWS, see collection_window):
   1. fetch the live vehicle_positions feed;
   2. skip it if the feed header timestamp has not moved since the last poll;
   3. keep only chosen routes within STOP_RADIUS_M of a chosen stop (filters);
@@ -19,7 +19,10 @@ tables (`make selection` fills them). scheduled_stop_times is checked at start a
 again on each new Adelaide day, so a new timetable version is picked up during a
 multi-day collection (scheduled_times). Each poll is logged to
 data/logs/collector.log; an error is logged and the loop carries on, so one
-network blip never ends a collection day. Stop it with Ctrl+C.
+network blip never ends a collection day. Between windows it sleeps until the
+next one opens, so one run collects every window of every day. When a window
+closes, its hourly weather is stored (weather_collection). It asks the
+operating system not to sleep while it runs (keep_awake). Stop it with Ctrl+C.
 """
 
 import argparse
@@ -31,8 +34,10 @@ from data_collection_setup.main import POSITIONS_COLUMNS, connect_to_database, c
 from gtfs_position_collection import filters, validate
 from gtfs_position_collection.collection_window import ADELAIDE_TZ, CollectionWindow
 from gtfs_position_collection.feed import fetch_vehicle_positions
+from gtfs_position_collection.keep_awake import prevent_sleep
 from gtfs_position_collection.scheduled_times import ensure_scheduled_stop_times
 from shared import config
+from weather_collection.main import store_window_weather
 
 logger = logging.getLogger("collector")
 
@@ -48,12 +53,11 @@ def set_up_logging():
     logger.setLevel(logging.INFO)
 
 
-def load_chosen_route_ids_and_stops(conn):
+def load_chosen_routes_and_stops(conn):
     """Reads the selection from the database.
 
     Returns:
-        Tuple (base_routes, variant_route_ids, stops): base route codes for the
-        filter, every GTFS route_id variant for the timetable window, and
+        Tuple (base_routes, stops): base route codes for the filter and
         (stop_id, stop_lat, stop_lon) tuples.
 
     Raises:
@@ -63,9 +67,7 @@ def load_chosen_route_ids_and_stops(conn):
     if not base_routes or not stops:
         raise RuntimeError("routes/stops tables in %s are empty; run `make selection` first"
                            % config.DB_PATH)
-    variant_route_ids = {variant for (route_ids,) in conn.execute("SELECT gtfs_route_ids FROM routes")
-                         for variant in route_ids.split()}
-    return base_routes, variant_route_ids, stops
+    return base_routes, stops
 
 
 def store_positions(conn, rows):
@@ -151,8 +153,22 @@ def refresh_scheduled_stop_times():
         " (reloaded)" if schedule_info["reloaded"] else "",
     )
 
+def store_weather_for_window(conn, start, end):
+    """Stores today's weather for one closed window; a failure is logged, never fatal.
+
+    `make weather` can fill the window in later if this fails.
+    """
+    today = datetime.now(ADELAIDE_TZ).date()
+    try:
+        stored = store_window_weather(conn, today, start, end)
+        logger.info("weather for window %s-%s stored: %d hours", start, end, stored)
+    except Exception:
+        logger.exception("weather for window %s-%s failed; run `make weather DAY=%s` later",
+                         start, end, today)
+
+
 def main():
-    """Polls live positions while the collection window is open."""
+    """Polls live positions while a collection window is open."""
     parser = argparse.ArgumentParser(
         description="Collect live positions of the chosen routes."
     )
@@ -161,7 +177,7 @@ def main():
         "--once",
         action="store_true",
         help=(
-            "poll once and exit, ignoring the collection window "
+            "poll once and exit, ignoring the collection windows "
             "(for testing)"
         ),
     )
@@ -174,14 +190,21 @@ def main():
     create_database(config.DB_PATH)
 
     # Ensure the current static GTFS timetable and scheduled_stop_times
-    # are ready before realtime validation begins.
-    refresh_scheduled_stop_times()
-    schedule_checked_on = datetime.now(ADELAIDE_TZ).date()
+    # are ready before realtime validation begins. A failure (e.g. a network
+    # blip right after a reboot) is retried in the loop instead of ending the run.
+    try:
+        refresh_scheduled_stop_times()
+        schedule_checked_on = datetime.now(ADELAIDE_TZ).date()
+    except Exception:
+        if args.once:
+            raise
+        logger.exception("schedule refresh failed at start; retrying next poll")
+        schedule_checked_on = None
 
     conn = connect_to_database(config.DB_PATH)
 
     try:
-        base_routes, variant_route_ids, stops = (load_chosen_route_ids_and_stops(conn))
+        base_routes, stops = load_chosen_routes_and_stops(conn)
 
         logger.info(
             "collecting routes %s near %d stops into %s",
@@ -199,16 +222,17 @@ def main():
             )
             return
 
-        window = CollectionWindow(
-            variant_route_ids,
-            {
-                stop_id
-                for stop_id, _, _ in stops
-            },
-        )
+        sleep_blocker = prevent_sleep()
+        if sleep_blocker:
+            logger.info("system sleep blocked while collecting (%s)", sleep_blocker)
+        else:
+            logger.warning("could not block system sleep; turn idle sleep off in the power settings")
+
+        window = CollectionWindow()
 
         last_feed_timestamp = None
         was_open = None
+        current_window = None
 
         while True:
             # A new Adelaide day: re-check the timetable version (T06 daily reload).
@@ -220,23 +244,28 @@ def main():
                 except Exception:  # Keep collecting with the current schedule.
                     logger.exception("daily schedule refresh failed; retrying next poll")
 
-            is_open = window.is_open()
+            open_window = window.open_window()
+            is_open = open_window is not None
+
+            # A window just closed: store its hourly weather.
+            if current_window and open_window != current_window:
+                store_weather_for_window(conn, *current_window)
+            current_window = open_window
 
             if is_open != was_open:
-                today = datetime.now(ADELAIDE_TZ).date()
-
                 logger.info(
-                    "collection window %s; today %s",
+                    "collection window %s; daily windows %s",
                     "open" if is_open else "closed",
-                    window.describe(today),
+                    window.describe(),
                 )
 
                 was_open = is_open
 
             if not is_open:
-                time.sleep(
-                    config.OUTSIDE_WINDOW_CHECK_SECONDS
-                )
+                # Sleep until the next window opens, checking at least every
+                # OUTSIDE_WINDOW_CHECK_SECONDS.
+                time.sleep(min(window.seconds_until_open(),
+                               config.OUTSIDE_WINDOW_CHECK_SECONDS))
                 continue
 
             poll_started = time.monotonic()

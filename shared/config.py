@@ -31,10 +31,11 @@ GTFS_VERSION = GTFS_BASE + "/static/latest/version.txt"
 # (measured 07-10-2026), so polling faster only re-reads the same snapshot.
 LIVE_FEED_URL = GTFS_BASE + "/realtime/vehicle_positions"
 LIVE_POLL_SECONDS = 15
-# Collect from the first to the last scheduled bus at the chosen stops, widened
-# by this margin so early and late buses near the stops are still recorded.
-COLLECTION_MARGIN_MINUTES = 30
-# While outside the collection window, check again this often.
+# Daily collection windows, Adelaide time ("HH:MM" start, end): morning peak,
+# midday and afternoon peak. The collector sleeps between them.
+COLLECTION_WINDOWS = [("07:00", "09:00"), ("12:00", "14:00"), ("16:00", "18:00")]
+# Between windows, sleep at most this long before checking again, so a laptop
+# waking from sleep still starts the next window on time.
 OUTSIDE_WINDOW_CHECK_SECONDS = 300
 
 # Demand data: Adelaide Metro banded Metrocard validations (data.sa.gov.au).

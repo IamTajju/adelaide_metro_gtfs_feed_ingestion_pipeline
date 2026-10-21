@@ -97,8 +97,8 @@
   <text x="296" y="438" class="h">Stage 3 · gtfs_position_collection <tspan class="s" font-weight="400" dx="8">make collect, polls every 15 s; reads the chosen routes + stops</tspan></text>
   <rect class="inner" x="300" y="452" width="240" height="66" rx="6"/>
   <text x="312" y="472" class="b">collection_window.py</text>
-  <text x="312" y="489" class="t">first → last scheduled chosen bus</text>
-  <text x="312" y="505" class="t">± 30 min; polling sleeps outside it</text>
+  <text x="312" y="489" class="t">07–09, 12–14, 16–18 daily</text>
+  <text x="312" y="505" class="t">polling sleeps between windows</text>
   <rect class="inner" x="580" y="452" width="240" height="66" rx="6"/>
   <text x="592" y="472" class="b">scheduled_times.py</text>
   <text x="592" y="489" class="t">scheduled arrivals of chosen trips</text>
@@ -144,12 +144,11 @@
   <!-- Metrocard taps → Stage 1 and Stage 2 candidates -->
   <path class="w" d="M230,140 H298"/>
   <path class="w" d="M250,140 V340 H298"/>
-  <!-- Static GTFS → Stage 1, Stage 2, collection window -->
+  <!-- Static GTFS → Stage 1, Stage 2 -->
   <path class="lane" d="M230,275 H266"/>
-  <path class="lane" d="M266,170 V486"/>
+  <path class="lane" d="M266,170 V310"/>
   <path class="w" d="M266,170 H298"/>
   <path class="w" d="M266,310 H298"/>
-  <path class="w" d="M266,486 H298"/>
   <!-- GTFS-realtime → feed.py; Open-Meteo → weather -->
   <path class="w" d="M230,582 H298"/>
   <path class="w" d="M230,851 H298"/>
@@ -222,7 +221,7 @@
   <!-- ============ Shared modules ============ -->
   <rect x="20" y="900" width="1360" height="86" rx="10" fill="#f6f8fa" stroke="#8c959f"/>
   <text x="36" y="920" class="h">Shared by every stage</text>
-  <text x="36" y="939" class="t"><tspan font-weight="700">shared/config.py</tspan><tspan dx="8">URLs, paths (DB_PATH, LOG_DIR), CBD box, Victoria Square, k, n, weights, poll interval, collection margin</tspan></text>
+  <text x="36" y="939" class="t"><tspan font-weight="700">shared/config.py</tspan><tspan dx="8">URLs, paths (DB_PATH, LOG_DIR), CBD box, Victoria Square, k, n, weights, poll interval, collection windows</tspan></text>
   <text x="36" y="956" class="t"><tspan font-weight="700">shared/timetable.py</tspan><tspan dx="8">GTFS download + version check, read_gtfs, services running on a date, weekday trip counts, route shapes</tspan></text>
   <text x="36" y="973" class="t"><tspan font-weight="700">data_collection_setup/main.py</tspan><tspan dx="8">schema for every table, create_database (non-destructive; --reset wipes), writers that replace the routes and stops tables</tspan></text>
 
