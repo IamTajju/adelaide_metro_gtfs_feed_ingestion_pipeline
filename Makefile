@@ -9,7 +9,7 @@ SYSTEM_PYTHON = python3
 endif
 
 .PHONY: help install setup selection route_candidates route_selection stop_candidates stop_selection \
-	collect schedule arrivals weather check backup test
+	collect schedule arrivals weather check backup features train evaluate test
 
 # Default target: list the commands (plain `make` downloads nothing).
 help:
@@ -26,7 +26,10 @@ help:
 	@echo "make weather           backfill hourly weather for yesterday (or DAY=YYYY-MM-DD); the collector stores it per window"
 	@echo "make check             rows stored per collection window yesterday (or DAY=YYYY-MM-DD)"
 	@echo "make backup            dated copy of data/gtfs.db in data/backups (or DEST=folder)"
-	@echo "make test              run the test suite"
+	@echo "make features          A2: rebuild the delay_features training table from data/gtfs.db"
+	@echo "make train             A2: compare the models and save the best to models/ (QUICK=1 for a dry run)"
+	@echo "make evaluate          A2: score the rules on the test days, write report tables + cases to reports/eval/"
+	@echo "make test              run the test suite (Python and Prolog)"
 
 # Virtual environment with the pinned dependencies.
 install:
@@ -79,6 +82,18 @@ check:
 # Safe copy of the database while the collector runs: make backup DEST=/path/to/other/disk
 backup:
 	$(PYTHON) -m data_collection_setup.backup $(DEST)
+
+# A2: ML training table (one row per observed arrival); refreshes arrivals first.
+features: arrivals
+	$(PYTHON) -m delay_features
+
+# A2: train and compare the models on fresh features; QUICK=1 tries one setting per model.
+train: features
+	$(PYTHON) -m delay_model $(if $(QUICK),--quick)
+
+# A2: score what the Prolog rules add on the held-out days, using the saved model.
+evaluate:
+	$(PYTHON) -m evaluate
 
 test:
 	$(PYTHON) -m pytest tests
