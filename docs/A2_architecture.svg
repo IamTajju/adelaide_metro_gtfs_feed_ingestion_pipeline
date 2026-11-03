@@ -1,0 +1,272 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1400" height="1010" viewBox="0 0 1400 1010" font-family="Helvetica Neue, Helvetica, Arial, sans-serif">
+  <title>Adelaide Metro bus delays: hybrid ML + Prolog architecture</title>
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#57606a"/>
+    </marker>
+    <style>
+      .t { font-size: 11px; fill: #1f2328; }
+      .m { font-size: 11px; fill: #57606a; }
+      .s { font-size: 10px; fill: #57606a; }
+      .b { font-size: 12px; font-weight: 700; fill: #1f2328; }
+      .col { font-size: 12px; font-weight: 700; fill: #57606a; letter-spacing: 0.06em; }
+      .mono { font-family: Menlo, Consolas, monospace; font-size: 10px; fill: #1f2328; }
+      .w { fill: none; stroke: #57606a; stroke-width: 1.5; marker-end: url(#arrow); }
+      .r { fill: none; stroke: #57606a; stroke-width: 1.3; stroke-dasharray: 5 4; marker-end: url(#arrow); }
+      .lane { fill: none; stroke: #57606a; stroke-width: 1.5; }
+      .band { fill: #fbfcfd; stroke: #d0d7de; stroke-width: 1.2; }
+      .src { fill: #f6f8fa; stroke: #6e7781; stroke-width: 1.2; }
+      .train { fill: #eaf2fc; stroke: #2a78d6; stroke-width: 1.5; }
+      .ml { fill: #fdf0ea; stroke: #eb6834; stroke-width: 1.5; }
+      .pl { fill: #e8f7f1; stroke: #1baf7a; stroke-width: 1.5; }
+      .q { fill: #f3effc; stroke: #8250df; stroke-width: 1.5; }
+      .out { fill: #fdf5e3; stroke: #c98500; stroke-width: 1.5; }
+      .inner { fill: #ffffff; stroke: #8c959f; stroke-width: 1; }
+      .db { fill: #f6f8fa; stroke: #24292f; stroke-width: 1.8; }
+    </style>
+  </defs>
+
+  <rect width="1400" height="1010" fill="#ffffff"/>
+
+  <!-- Title -->
+  <text x="20" y="30" font-size="20" font-weight="700" fill="#1f2328">Adelaide Metro bus delays: hybrid ML + Prolog architecture</text>
+  <text x="20" y="50" class="m">COMP9742 Artefact 2 · solid arrows = data passed on · dashed arrows = data read from storage · Python (ML) + SWI-Prolog (symbolic)</text>
+
+  <!-- ================= 1. TRAINING PHASE ================= -->
+  <rect class="band" x="20" y="64" width="1360" height="278" rx="10"/>
+  <text x="36" y="86" class="col">1 · TRAINING PHASE · offline, final run after collection ends (4 Nov)</text>
+
+  <!-- gtfs.db -->
+  <rect class="db" x="40" y="104" width="220" height="226" rx="8"/>
+  <text x="52" y="126" class="b">data/gtfs.db</text>
+  <text x="52" y="142" class="m">filled by the A1 ingestion pipeline</text>
+  <rect class="inner" x="52" y="156" width="196" height="22" rx="4"/>
+  <text x="60" y="171" class="mono">arrivals · positions</text>
+  <rect class="inner" x="52" y="184" width="196" height="22" rx="4"/>
+  <text x="60" y="199" class="mono">scheduled_stop_times</text>
+  <rect class="inner" x="52" y="212" width="196" height="22" rx="4"/>
+  <text x="60" y="227" class="mono">weather_hourly</text>
+  <rect class="inner" x="52" y="240" width="196" height="22" rx="4"/>
+  <text x="60" y="255" class="mono">routes · stops</text>
+  <rect class="inner" x="52" y="268" width="196" height="22" rx="4"/>
+  <text x="60" y="283" class="mono">delay_features (from 1)</text>
+  <text x="52" y="314" class="s">07–09 · 12–14 · 16–18, 18 Oct – 4 Nov</text>
+
+  <!-- 1. Features -->
+  <rect class="train" x="300" y="104" width="240" height="226" rx="8"/>
+  <text x="312" y="126" class="b">1. Build features</text>
+  <text x="312" y="142" class="mono">delay_features</text>
+  <text x="312" y="166" class="t">delay = observed − scheduled arrival</text>
+  <text x="312" y="184" class="t">label: early · on time · late</text>
+  <text x="312" y="200" class="s">(&lt; −1 min · −1 to +5 min · &gt; +5 min)</text>
+  <text x="312" y="226" class="b">Inputs</text>
+  <text x="312" y="244" class="m">route, stop, quadrant (N/E/S/W)</text>
+  <text x="312" y="260" class="m">window (AM / midday / PM), day type</text>
+  <text x="312" y="276" class="m">headway, rain, previous-stop delay</text>
+  <text x="312" y="292" class="m">drop: ping &gt; 250 m, 10 min window edge</text>
+
+  <!-- 2. Train -->
+  <rect class="train" x="580" y="104" width="320" height="226" rx="8"/>
+  <text x="592" y="126" class="b">2. Compare baselines + 3 models</text>
+  <text x="592" y="142" class="mono">delay_model.train</text>
+  <rect class="inner" x="592" y="154" width="144" height="44" rx="5"/>
+  <text x="602" y="172" class="b">Baselines</text>
+  <text x="602" y="188" class="s">prior · same as prev. stop</text>
+  <rect class="inner" x="744" y="154" width="144" height="44" rx="5"/>
+  <text x="754" y="172" class="b">Logistic regression</text>
+  <text x="754" y="188" class="s">simple, explainable</text>
+  <rect class="inner" x="592" y="206" width="144" height="44" rx="5"/>
+  <text x="602" y="224" class="b">Random forest</text>
+  <text x="602" y="240" class="s">non-linear, robust</text>
+  <rect class="inner" x="744" y="206" width="144" height="44" rx="5"/>
+  <text x="754" y="224" class="b">Gradient boosting</text>
+  <text x="754" y="240" class="s">usually most accurate</text>
+  <text x="592" y="266" class="s">test: last 3 days, held out, scored once</text>
+  <text x="592" y="281" class="s">CV: 5 folds of whole days (3 if “late” is thin)</text>
+  <text x="592" y="296" class="s">small fixed grids · no class weights</text>
+  <text x="592" y="311" class="s">pick: lowest CV log-loss (Prolog reads p)</text>
+
+  <!-- 3. Saved model -->
+  <rect class="train" x="940" y="104" width="240" height="226" rx="8"/>
+  <text x="952" y="126" class="b">3. Save the best model</text>
+  <text x="952" y="142" class="mono">models/</text>
+  <rect class="inner" x="952" y="156" width="216" height="22" rx="4"/>
+  <text x="960" y="171" class="mono">model.joblib</text>
+  <rect class="inner" x="952" y="184" width="216" height="22" rx="4"/>
+  <text x="960" y="199" class="mono">metrics.json</text>
+  <rect class="inner" x="952" y="212" width="216" height="22" rx="4"/>
+  <text x="960" y="227" class="mono">reliability.png · cv_results</text>
+  <text x="952" y="262" class="m">best = lowest mean CV log-loss</text>
+  <text x="952" y="278" class="m">refit on all non-test days, scored</text>
+  <text x="952" y="294" class="m">once on the last 3 days (95% CIs)</text>
+
+  <!-- How it runs -->
+  <rect class="src" x="1210" y="104" width="160" height="226" rx="8"/>
+  <text x="1222" y="126" class="b">How it runs</text>
+  <text x="1222" y="150" class="mono">make features</text>
+  <text x="1222" y="168" class="mono">make train</text>
+  <text x="1222" y="186" class="mono">make hybrid_vs_ml</text>
+  <text x="1222" y="214" class="s">dry run: make train QUICK=1</text>
+  <text x="1222" y="228" class="s">final run on 4 Nov</text>
+
+  <!-- training arrows -->
+  <path class="r" d="M260,217 L298,217"/>
+  <path class="w" d="M540,217 L578,217"/>
+  <path class="w" d="M900,217 L938,217"/>
+
+  <!-- model handed to inference -->
+  <text x="640" y="354" class="s">inference loads model.joblib</text>
+
+  <!-- ================= 2. INFERENCE PHASE ================= -->
+  <rect class="band" x="20" y="370" width="1360" height="486" rx="10"/>
+  <path class="r" d="M1060,330 L1060,358 L285,358 L285,520 L298,520"/>
+  <text x="300" y="392" class="col">2 · INFERENCE PHASE · the query engine: ask a question, get a prediction + reasoning</text>
+
+  <!-- query in -->
+  <rect class="q" x="300" y="408" width="600" height="66" rx="8"/>
+  <text x="312" y="428" class="b">Query in</text>
+  <text x="372" y="428" class="mono">python -m hybrid_engine ask …</text>
+  <text x="312" y="446" class="mono">status G10 "King William St"  ·  alerts --within 60  ·  bunching G10</text>
+  <text x="312" y="464" class="s">--at "2026-10-30 08:10" replays stored data with only what was known then (built: status --at; live mode next)</text>
+  <path class="w" d="M420,474 L420,488"/>
+  <path class="w" d="M740,474 L740,488"/>
+  <text x="748" y="485" class="s">picks the Prolog goal</text>
+
+  <!-- live / stored sources -->
+  <rect class="src" x="40" y="490" width="210" height="78" rx="8"/>
+  <text x="52" y="510" class="b">Live arrival estimates</text>
+  <text x="52" y="526" class="m">Adelaide Metro trip_updates</text>
+  <text x="52" y="542" class="m">operator ETA per trip × stop</text>
+  <text x="52" y="558" class="m">+ stops away · live only</text>
+
+  <rect class="src" x="40" y="580" width="210" height="62" rx="8"/>
+  <text x="52" y="600" class="b">Service alerts</text>
+  <text x="52" y="616" class="m">Adelaide Metro service_alerts</text>
+  <text x="52" y="632" class="m">closures, detours · live only</text>
+
+  <rect class="src" x="40" y="654" width="210" height="78" rx="8"/>
+  <text x="52" y="674" class="b">Static GTFS timetable</text>
+  <text x="52" y="690" class="m">scheduled times, headways,</text>
+  <text x="52" y="706" class="m">timing points, stop order</text>
+
+  <rect class="src" x="40" y="744" width="210" height="62" rx="8"/>
+  <text x="52" y="764" class="b">Current weather</text>
+  <text x="52" y="780" class="m">Open-Meteo</text>
+  <text x="52" y="796" class="s">--at: stored rows in gtfs.db</text>
+
+
+  <!-- source lane -->
+  <path class="lane" d="M250,529 L272,529 M250,611 L272,611 M250,693 L272,693 M250,775 L272,775 M272,529 L272,775"/>
+  <path class="w" d="M272,550 L298,550"/>
+  <path class="w" d="M272,770 L298,770"/>
+
+  <!-- 4. Predict -->
+  <rect class="ml" x="300" y="490" width="240" height="150" rx="8"/>
+  <text x="312" y="512" class="b">4. Predict (what usually happens)</text>
+  <text x="312" y="528" class="mono">hybrid_engine/engine.py</text>
+  <text x="312" y="550" class="m">loads model.joblib</text>
+  <text x="312" y="566" class="m">for the trips the query needs,</text>
+  <text x="312" y="582" class="m">builds the same inputs as training</text>
+  <text x="312" y="604" class="b">→ class + probability</text>
+  <text x="312" y="622" class="mono">late, p = 0.81</text>
+
+  <path class="w" d="M420,640 L420,678"/>
+  <text x="428" y="664" class="s">ML prediction</text>
+
+  <!-- 5. Facts bridge -->
+  <rect class="ml" x="300" y="680" width="240" height="160" rx="8"/>
+  <text x="312" y="702" class="b">5. Turn everything into facts</text>
+  <text x="312" y="718" class="mono">hybrid_engine (Python → swipl)</text>
+  <text x="312" y="740" class="mono">prob(Id, PEarly, POnTime, PLate)</text>
+  <text x="312" y="756" class="mono">has_prev(Id, 0/1) · seen_stop(S)</text>
+  <text x="312" y="772" class="mono">timepoint(Id) · in_window(Id)</text>
+  <text x="312" y="788" class="mono">follows(Next, Ahead)</text>
+  <text x="312" y="804" class="mono">eta(Id, Delay, StopsAway)  live</text>
+  <text x="312" y="820" class="mono">alert(Route, Type, Stop)   live</text>
+
+  <path class="w" d="M540,760 L578,760"/>
+  <text x="546" y="752" class="s">facts</text>
+
+  <!-- 6. Prolog -->
+  <rect class="pl" x="580" y="490" width="320" height="350" rx="8"/>
+  <text x="592" y="512" class="b">6. Prolog knowledge base + rules</text>
+  <text x="592" y="528" class="mono">reasoner/kb.pl · reasoner/rules.pl</text>
+
+  <rect class="inner" x="592" y="540" width="296" height="72" rx="5"/>
+  <text x="602" y="558" class="b">Confidence</text>
+  <text x="602" y="574" class="s">live: ML vs operator ETA + stops away → high/med/low</text>
+  <text x="602" y="588" class="s">offline: by top ML probability, at most medium</text>
+  <text x="602" y="602" class="s">guards → low: no prev. stop, unseen stop, off-window</text>
+
+  <rect class="inner" x="592" y="620" width="296" height="56" rx="5"/>
+  <text x="602" y="638" class="b">Service alerts (live)</text>
+  <text x="602" y="654" class="s">closure or detour on route → one level down</text>
+  <text x="602" y="668" class="s">closure → tell passengers at the stop</text>
+
+  <rect class="inner" x="592" y="684" width="296" height="86" rx="5"/>
+  <text x="602" y="702" class="b">Bunching (two buses at once)</text>
+  <text x="602" y="718" class="s">bus ahead warned late, next bus not → bunching</text>
+  <text x="602" y="734" class="s">next bus warned early, bus ahead not → bunching</text>
+  <text x="602" y="750" class="s">the mirror cases → long gap (long wait)</text>
+  <text x="602" y="764" class="s">ML sees one trip; only the rules see the pair</text>
+
+  <rect class="inner" x="592" y="778" width="296" height="52" rx="5"/>
+  <text x="602" y="796" class="b">Recommendation</text>
+  <text x="602" y="812" class="s">p ≥ 1/3 warns · timing points veto early + hold</text>
+
+  <path class="w" d="M900,665 L938,665"/>
+
+  <!-- 7. Output -->
+  <rect class="out" x="940" y="490" width="240" height="350" rx="8"/>
+  <text x="952" y="512" class="b">7. Answer</text>
+  <text x="952" y="528" class="m">printed with the reasoning trace</text>
+  <rect class="inner" x="952" y="540" width="216" height="40" rx="5"/>
+  <text x="962" y="556" class="b">Verdict</text>
+  <text x="962" y="572" class="s">late, about +6 min</text>
+  <rect class="inner" x="952" y="588" width="216" height="40" rx="5"/>
+  <text x="962" y="604" class="b">Confidence</text>
+  <text x="962" y="620" class="s">high · medium · low</text>
+  <rect class="inner" x="952" y="636" width="216" height="54" rx="5"/>
+  <text x="962" y="652" class="b">Action</text>
+  <text x="962" y="668" class="s">notify_passengers · hold_bus</text>
+  <text x="962" y="682" class="s">flag_to_operator · no_action</text>
+  <rect class="inner" x="952" y="698" width="216" height="54" rx="5"/>
+  <text x="962" y="714" class="b">Reasoning trace</text>
+  <text x="962" y="730" class="s">the rules that fired, in order</text>
+  <text x="962" y="744" class="s">(shown in report test cases)</text>
+  <text x="952" y="772" class="s">e.g. G10 at Stop X: late +6 min, high:</text>
+  <text x="952" y="786" class="s">ML late 0.81, operator +6 min agree,</text>
+  <text x="952" y="800" class="s">bus 2 stops away, no alerts</text>
+  <text x="952" y="814" class="s">→ notify_passengers</text>
+
+  <!-- Consumers -->
+  <rect class="src" x="1210" y="490" width="160" height="150" rx="8"/>
+  <text x="1222" y="510" class="b">Two modes</text>
+  <text x="1222" y="532" class="s">live: Adelaide Metro feeds</text>
+  <text x="1222" y="546" class="s">+ weather (not built yet)</text>
+  <text x="1222" y="570" class="s">--at TIME: reads stored</text>
+  <text x="1222" y="584" class="s">rows for that moment</text>
+
+  <rect class="src" x="1210" y="660" width="160" height="120" rx="8"/>
+  <text x="1222" y="680" class="b">Who uses it</text>
+  <text x="1222" y="702" class="s">passengers: alerts</text>
+  <text x="1222" y="718" class="s">operator: hold / flag</text>
+  <text x="1222" y="740" class="mono">hybrid_engine ask</text>
+  <text x="1222" y="756" class="mono">make hybrid_vs_ml</text>
+
+  <path class="w" d="M1180,720 L1208,720"/>
+
+  <!-- ================= 3. EVALUATION ================= -->
+  <rect class="band" x="20" y="866" width="1360" height="128" rx="10"/>
+  <text x="36" y="888" class="col">3 · HYBRID VS ML · make hybrid_vs_ml, on the last 3 test days</text>
+  <path class="w" d="M1060,840 L1060,904"/>
+  <text x="1068" y="886" class="s">same engine</text>
+  <rect class="src" x="40" y="906" width="1140" height="74" rx="8"/>
+  <text x="56" y="928" class="b">Saved model + rules on the 3 held-out days, scored against real arrivals · no stored operator ETAs or alerts: those rules → unit tests + constructed cases</text>
+  <text x="56" y="948" class="m">warnings: late + early recall, false alarms · ML argmax  vs  ML at the same p ≥ 1/3  vs  hybrid (any gap = rules only) · confidence level vs accuracy</text>
+  <text x="56" y="966" class="m">bus pairs: bunching / long gap vs observed gaps (&lt; 25% / &gt; 150% of headway) · timetable vs persistence vs hybrid · test cases replayed via ask --at</text>
+  <rect class="src" x="1210" y="906" width="160" height="74" rx="8"/>
+  <text x="1222" y="928" class="b">Feeds the report</text>
+  <text x="1222" y="946" class="s">reports/hybrid_vs_ml/ tables</text>
+  <text x="1222" y="962" class="s">test cases + traces</text>
+</svg>
