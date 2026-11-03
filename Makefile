@@ -9,7 +9,7 @@ SYSTEM_PYTHON = python3
 endif
 
 .PHONY: help install setup selection route_candidates route_selection stop_candidates stop_selection \
-	collect schedule arrivals weather check backup test
+	collect schedule arrivals weather check backup features test
 
 # Default target: list the commands (plain `make` downloads nothing).
 help:
@@ -26,6 +26,7 @@ help:
 	@echo "make weather           backfill hourly weather for yesterday (or DAY=YYYY-MM-DD); the collector stores it per window"
 	@echo "make check             rows stored per collection window yesterday (or DAY=YYYY-MM-DD)"
 	@echo "make backup            dated copy of data/gtfs.db in data/backups (or DEST=folder)"
+	@echo "make features          A2: rebuild the delay_features training table from data/gtfs.db"
 	@echo "make test              run the test suite"
 
 # Virtual environment with the pinned dependencies.
@@ -67,6 +68,10 @@ schedule:
 # Stage 3, after collection: observed vs scheduled arrivals.
 arrivals:
 	$(PYTHON) -m gtfs_position_collection.arrivals
+
+# A2: ML training table (one row per observed arrival); refreshes arrivals first.
+features: arrivals
+	$(PYTHON) -m delay_features
 
 # Stage 4: hourly weather for one day (default yesterday): make weather DAY=2026-10-07
 weather:

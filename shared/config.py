@@ -87,3 +87,18 @@ POSITION_MAX_AGE_SECONDS = 90
 
 # Allow a small tolerance for clock disalignment between feed and ingestion pipeline
 POSITION_FUTURE_TOLERANCE_SECONDS = 10
+
+# A2 delay features
+# Delay classes in minutes: early < EARLY_MINUTES <= on_time <= LATE_MINUTES < late.
+EARLY_MINUTES = -1
+LATE_MINUTES = 5
+# Arrivals whose closest ping is further from the stop are dropped: at bus
+# speed their observed time can be off by more than the 1 min class band.
+# Provisional; check the distance spread `make features` prints.
+MAX_ARRIVAL_PING_M = 250
+# Feature names of COLLECTION_WINDOWS, in the same order.
+WINDOW_NAMES = ["am", "midday", "pm"]
+# Arrivals scheduled this close to a window's start or end are dropped: a bus
+# there is seen only if it ran early (end) or late (start) enough to stay
+# inside the window, which biases the labels.
+EDGE_MARGIN_MINUTES = 10
