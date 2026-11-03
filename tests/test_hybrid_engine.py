@@ -2,9 +2,9 @@
 # Student FAN:  ahme0423
 # File:         tests/test_hybrid_engine.py
 # Date:         01-11-2026
-# Description:  Tests for the facts builder, the Prolog bridge, replays and the evaluation.
+# Description:  Tests for the facts builder, the Prolog bridge, replays and the hybrid vs ML comparison.
 # Usage:        python -m pytest tests
-"""Tests for the facts builder, the Prolog bridge, replays and the evaluation."""
+"""Tests for the facts builder, the Prolog bridge, replays and the hybrid vs ML comparison."""
 
 import json
 import shutil
@@ -17,7 +17,7 @@ import pytest
 
 from delay_features.main import day_type, delay_class
 from delay_model.train import train
-from evaluate.main import bus_pairs, evaluate, pair_rule, warning_rates
+from hybrid_vs_ml.main import bus_pairs, compare, pair_rule, warning_rates
 from hybrid_engine import engine
 from hybrid_engine.facts import TIME_FORMAT, build_facts, follows_pairs
 from shared import config
@@ -177,10 +177,10 @@ def test_bus_pairs_skip_warnings_that_come_too_late(trained):
                 assert bus["prev_stop_observed"] < leader["observed_arrival"]
 
 
-def test_evaluate_writes_every_output(trained, tmp_path):
+def test_hybrid_vs_ml_writes_every_output(trained, tmp_path):
     features, bundle = trained
     timepoints = {(trip, "S2") for trip in features["trip_id"].unique()}
-    summary = evaluate(features, bundle, timepoints, out_dir=tmp_path, resamples=20)
+    summary = compare(features, bundle, timepoints, out_dir=tmp_path, resamples=20)
 
     for name in ("safety.csv", "confidence.csv", "bunching.csv", "pairs.csv", "metrics.json"):
         assert (tmp_path / name).exists(), name

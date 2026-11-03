@@ -6,7 +6,7 @@
 # Usage:        from hybrid_engine import facts
 """Turns predicted bus rows into Prolog facts for reasoner/rules.pl.
 
-One builder for both `ask` and `make evaluate`, so the evaluated system is
+One builder for both `ask` and `make hybrid_vs_ml`, so the evaluated system is
 the one that answers queries. The fact shapes are listed at the top of
 reasoner/rules.pl.
 """

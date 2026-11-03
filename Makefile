@@ -9,7 +9,7 @@ SYSTEM_PYTHON = python3
 endif
 
 .PHONY: help install setup selection route_candidates route_selection stop_candidates stop_selection \
-	collect schedule arrivals weather check backup features train evaluate test
+	collect schedule arrivals weather check backup features train hybrid_vs_ml test
 
 # Default target: list the commands (plain `make` downloads nothing).
 help:
@@ -28,7 +28,7 @@ help:
 	@echo "make backup            dated copy of data/gtfs.db in data/backups (or DEST=folder)"
 	@echo "make features          A2: rebuild the delay_features training table from data/gtfs.db"
 	@echo "make train             A2: compare the models and save the best to models/ (QUICK=1 for a dry run)"
-	@echo "make evaluate          A2: score the rules on the test days, write report tables + cases to reports/eval/"
+	@echo "make hybrid_vs_ml      A2: does adding the rules beat ML alone? test-day tables + cases to reports/hybrid_vs_ml/"
 	@echo "make test              run the test suite (Python and Prolog)"
 
 # Virtual environment with the pinned dependencies.
@@ -92,8 +92,8 @@ train: features
 	$(PYTHON) -m delay_model $(if $(QUICK),--quick)
 
 # A2: score what the Prolog rules add on the held-out days, using the saved model.
-evaluate:
-	$(PYTHON) -m evaluate
+hybrid_vs_ml:
+	$(PYTHON) -m hybrid_vs_ml
 
 test:
 	$(PYTHON) -m pytest tests

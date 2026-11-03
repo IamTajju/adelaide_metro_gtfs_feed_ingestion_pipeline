@@ -119,4 +119,4 @@ BUNCH_FRAC = 0.25  # Bunching: gap under this share of the scheduled headway.
 GAP_FRAC = 1.5  # Long gap: gap over this share of the scheduled headway.
 MIN_EVENTS = 10  # Fewer real bunching or long-gap events: report counts and cases, no precision/recall.
 QUERY_WITHIN_MINUTES = 60  # `ask status` looks this far ahead of the query time.
-EVAL_DIR = ROOT / "reports" / "eval"  # make evaluate writes here.
+HYBRID_VS_ML_DIR = ROOT / "reports" / "hybrid_vs_ml"  # make hybrid_vs_ml writes here.
