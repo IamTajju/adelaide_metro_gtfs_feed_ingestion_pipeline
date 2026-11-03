@@ -167,34 +167,54 @@ def add_previous_stop_delay(arrivals):
 
 
 def load_schedule(conn):
-    """Reads one scheduled time per trip and stop from scheduled_stop_times.
+    """Reads one scheduled time per timetable version, trip and stop.
 
-    If a trip and stop appear in several timetable versions, the newest
-    version wins, as in the arrivals stage.
+    Every version is kept: add_headway picks one version per date.
 
     Args:
         conn: Open connection to the project database.
 
     Returns:
-        DataFrame with route, direction_id, service_id, trip_id, stop_id and
-        arrival_seconds columns.
+        DataFrame with version_number, route, direction_id, service_id,
+        trip_id, stop_id and arrival_seconds columns.
     """
     frame = pd.read_sql_query(
         "SELECT gtfs_version, route, direction_id, service_id, trip_id, "
         "stop_id, stop_sequence, arrival_seconds FROM scheduled_stop_times", conn)
     frame = frame.assign(version_number=pd.to_numeric(frame["gtfs_version"], errors="coerce"))
-    frame = frame.sort_values(["version_number", "stop_sequence"], ascending=[False, True])
-    frame = frame.drop_duplicates(subset=["trip_id", "stop_id"], keep="first")
-    return frame[["route", "direction_id", "service_id", "trip_id", "stop_id",
-                  "arrival_seconds"]]
+    frame = frame.sort_values("stop_sequence")
+    frame = frame.drop_duplicates(subset=["version_number", "trip_id", "stop_id"], keep="first")
+    return frame[["version_number", "route", "direction_id", "service_id", "trip_id",
+                  "stop_id", "arrival_seconds"]]
+
+
+def version_of_day(arrivals, schedule):
+    """Picks the timetable version that ran on each service date.
+
+    Service ids are reused across versions while trip ids are renumbered,
+    so mixing versions would put a superseded trip next to its replacement
+    (a fake 1 min headway). The version holding the most of the day's
+    observed trips wins, the newest on a tie. Observed trips missing from it
+    get no headway and are counted as "no headway".
+
+    Returns:
+        DataFrame with service_date and version_number columns.
+    """
+    trips = arrivals[["service_date", "trip_id"]].drop_duplicates()
+    counts = trips.merge(schedule[["version_number", "trip_id"]].drop_duplicates(),
+                         on="trip_id")
+    counts = counts.groupby(["service_date", "version_number"]).size().reset_index(name="n")
+    counts = counts.sort_values(["n", "version_number"], ascending=False)
+    return counts.drop_duplicates("service_date")[["service_date", "version_number"]]
 
 
 def add_headway(arrivals, schedule):
     """Adds the scheduled gap to the previous bus of the route at the stop.
 
-    The services running on a date are the services of the trips observed
-    that date, so no calendar of past timetable versions is needed. The
-    first bus of the day has no previous bus and takes the gap to the next.
+    Each date uses one timetable version (version_of_day). The services
+    running on a date are the services of the trips observed that date, so
+    no calendar of past timetable versions is needed. The first bus of the
+    day has no previous bus and takes the gap to the next.
 
     Args:
         arrivals: DataFrame with trip_id, stop_id and service_date columns.
@@ -204,10 +224,14 @@ def add_headway(arrivals, schedule):
         Copy of arrivals with a headway_min column (NaN when the route has
         a single bus at that stop that day).
     """
-    services = arrivals[["service_date", "trip_id"]].merge(
-        schedule[["trip_id", "service_id"]].drop_duplicates(), on="trip_id")
-    services = services[["service_date", "service_id"]].drop_duplicates()
-    day = services.merge(schedule, on="service_id").dropna(subset=["arrival_seconds"])
+    versions = version_of_day(arrivals, schedule)
+    services = arrivals[["service_date", "trip_id"]].merge(versions, on="service_date")
+    services = services.merge(
+        schedule[["version_number", "trip_id", "service_id"]].drop_duplicates(),
+        on=["version_number", "trip_id"])
+    services = services[["service_date", "version_number", "service_id"]].drop_duplicates()
+    day = services.merge(schedule, on=["version_number", "service_id"])
+    day = day.dropna(subset=["arrival_seconds"])
     day = day.sort_values("arrival_seconds")
     group = day.groupby(["service_date", "route", "direction_id", "stop_id"],
                         dropna=False)["arrival_seconds"]
