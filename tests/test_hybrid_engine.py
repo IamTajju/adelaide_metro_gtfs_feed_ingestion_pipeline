@@ -110,6 +110,18 @@ def test_outcome_line_scores_the_verdict_and_each_warning():
     assert line.endswith("-> verdict right")
 
 
+def test_pair_outcome_line_uses_the_same_thresholds_as_hybrid_vs_ml():
+    from hybrid_engine.__main__ import pair_outcome_line
+    leader = {"observed_arrival": "2026-10-30 16:30:00"}
+    close = {"observed_arrival": "2026-10-30 16:32:00"}  # 2 min apart
+    far = {"observed_arrival": "2026-10-30 16:50:00"}    # 20 min apart
+    assert pair_outcome_line("bunching", leader, close, 10.0).endswith("bunching was real")
+    assert pair_outcome_line("bunching", leader, far, 10.0).endswith("bunching did not happen")
+    assert pair_outcome_line("long gap", leader, far, 10.0).endswith("long gap was real")
+    assert pair_outcome_line("long gap", leader, close, 10.0).endswith(
+        "long gap did not happen")
+
+
 def test_warning_rates():
     actual = np.array(["late", "late", "on_time", "early"])
     rates = warning_rates(actual, np.array([True, False, True, False]),

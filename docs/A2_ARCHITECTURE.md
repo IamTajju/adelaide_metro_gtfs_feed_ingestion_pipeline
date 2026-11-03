@@ -79,10 +79,10 @@ Why:
 |---|---|---|
 | `status <route> <stop>` | When will the next bus(es) really arrive, and how sure are we? | `answer(status(Route, Stop), Answer, Trace)` |
 | `alerts [--within 60]` | Which chosen stops need a passenger alert in the next N minutes? | `answer(alerts(Minutes), Answer, Trace)` |
-| `bunching <route>` | Are buses on this route about to bunch, or is there a long gap? | `answer(bunching(Route), Answer, Trace)` |
+| `bunching <route> [stop]` | Are buses on this route about to bunch, or is there a long gap? | the same `answer/2` per bus; pairs from `bunching/2` and `long_gap/2` |
 
 Every query takes **`--at "2026-10-30 08:10"`** to answer for a past moment from stored data instead of live feeds.
-The engine is the same either way. Only `status` with `--at` is built so far; live mode and the `alerts` and `bunching` queries are next.
+The engine is the same either way. `status` and `bunching` with `--at` are built; live mode and the `alerts` query are not.
 `--at` is used for:
 - the demo video, which then does not depend on buses running while recording;
 - the report's test cases, which can be reproduced exactly;
@@ -175,4 +175,5 @@ Precipitation in a replay is the observed hour; a live query would use a forecas
 | `make features` | build the training table from `gtfs.db` |
 | `make train` | compare baselines and 3 tuned models, save the best and the report tables |
 | `python -m hybrid_engine ask status <route> <stop> --at TIME` | answer one question with prediction + reasoning (live mode not built yet) |
+| `python -m hybrid_engine ask bunching <route> [stop] --at TIME` | bus pairs predicted to bunch or leave a long gap, at each chosen stop of the route |
 | `make hybrid_vs_ml` | score what the rules add on the test days; write tables and test cases to `reports/hybrid_vs_ml/` |

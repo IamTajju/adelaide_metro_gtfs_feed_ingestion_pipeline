@@ -84,9 +84,12 @@ reasons. Run these after collection, from the repository root, in this order.
 | 2. Train and compare the models, save the best to `models/` (runs step 1 too) | `make train` (dry run: `make train QUICK=1`) | `python -m delay_model` |
 | 3. Does adding the rules beat ML alone? Scores the last 3 days, writes `reports/hybrid_vs_ml/` | `make hybrid_vs_ml` | `python -m hybrid_vs_ml` |
 | 4. Ask about a route at a stop at a past moment | — | `python -m hybrid_engine ask status G10 3474 --at "2026-10-30 08:10"` |
+| 5. Check a route for bunching and long gaps at a past moment (a stop is optional) | — | `python -m hybrid_engine ask bunching 106 --at "2026-10-30 16:30"` |
 
 Step 4 takes a stop id or the stop's full name, and only the chosen routes and stops. It prints each bus
 due in the next hour with its verdict, confidence, action and reasons, then what really happened.
+Step 5 checks consecutive buses at every chosen stop of the route, and says whether each flagged pair
+really bunched.
 For a fair check, ask about the last 3 days; the model trained on the others.
 Only past moments (`--at`) work for now: live mode is not built.
 
