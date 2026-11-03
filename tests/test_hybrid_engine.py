@@ -99,6 +99,17 @@ def test_pair_rule_matches_the_prolog_rules():
     assert pair_rule(None, None) == (False, False)
 
 
+def test_outcome_line_scores_the_verdict_and_each_warning():
+    from hybrid_engine.__main__ import outcome_line
+    outcome = {"observed_arrival": "2026-10-30 08:11:00", "delay_min": 7.0,
+               "delay_class": "late"}
+    line = outcome_line({"verdict": "on_time", "warnings": ["late"]}, outcome)
+    assert line == ("Actually: arrived 08:11 (+7.0 min, late) -> "
+                    "verdict wrong, late warning right")
+    line = outcome_line({"verdict": "late", "warnings": []}, outcome)
+    assert line.endswith("-> verdict right")
+
+
 def test_warning_rates():
     actual = np.array(["late", "late", "on_time", "early"])
     rates = warning_rates(actual, np.array([True, False, True, False]),

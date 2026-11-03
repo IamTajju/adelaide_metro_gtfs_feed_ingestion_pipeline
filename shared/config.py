@@ -87,3 +87,36 @@ POSITION_MAX_AGE_SECONDS = 90
 
 # Allow a small tolerance for clock disalignment between feed and ingestion pipeline
 POSITION_FUTURE_TOLERANCE_SECONDS = 10
+
+# A2 delay features
+# Delay classes in minutes: early < EARLY_MINUTES <= on_time <= LATE_MINUTES < late.
+EARLY_MINUTES = -1
+LATE_MINUTES = 5
+# Arrivals whose closest ping is further from the stop are dropped: at bus
+# speed their observed time can be off by more than the 1 min class band.
+# Provisional; check the distance spread `make features` prints.
+MAX_ARRIVAL_PING_M = 250
+# Feature names of COLLECTION_WINDOWS, in the same order.
+WINDOW_NAMES = ["am", "midday", "pm"]
+# Arrivals scheduled this close to a window's start or end are dropped: a bus
+# there is seen only if it ran early (end) or late (start) enough to stay
+# inside the window, which biases the labels.
+EDGE_MARGIN_MINUTES = 10
+
+# A2 delay model
+MODELS_DIR = ROOT / "models"  # model.joblib, metrics.json and the report tables/plots.
+TEST_DAYS = 3  # The last service dates, held out and scored once.
+CV_FOLDS = 5  # Date-grouped folds on the remaining days...
+FALLBACK_FOLDS = 3  # ...or this many when a fold would hold too few late rows.
+MIN_LATE_PER_FOLD = 5
+BOOTSTRAP_RESAMPLES = 1000  # For the test-set confidence intervals.
+
+# A2 hybrid reasoning (Prolog). Fixed before the test days are seen; not tuned.
+P_WARN = 1 / 3  # Warn early or late when its probability beats chance over 3 classes.
+CONF_MEDIUM = 0.5  # Without an operator estimate: medium if the top class has p >= this, else low.
+NEAR_STOPS = 3  # Live only: a bus this many stops away or fewer trusts the operator estimate.
+BUNCH_FRAC = 0.25  # Bunching: gap under this share of the scheduled headway.
+GAP_FRAC = 1.5  # Long gap: gap over this share of the scheduled headway.
+MIN_EVENTS = 10  # Fewer real bunching or long-gap events: report counts and cases, no precision/recall.
+QUERY_WITHIN_MINUTES = 60  # `ask status` looks this far ahead of the query time.
+EVAL_DIR = ROOT / "reports" / "eval"  # make evaluate writes here.
