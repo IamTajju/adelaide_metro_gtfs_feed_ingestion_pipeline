@@ -29,6 +29,7 @@ pytest==9.1.1
 python-dateutil==2.9.0.post0
 rasterio==1.5.2
 requests==2.34.2
+scikit-learn==1.9.1
 six==1.17.0
 urllib3==2.8.0
 xyzservices==2026.9.1
