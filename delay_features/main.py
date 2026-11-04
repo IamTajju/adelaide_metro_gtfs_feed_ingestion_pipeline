@@ -22,7 +22,8 @@ Rows are dropped in a fixed order and each drop is counted once: no
 scheduled time, closest ping further than MAX_ARRIVAL_PING_M (observed time
 too uncertain for the class bands), scheduled within EDGE_MARGIN_MINUTES of
 a collection window's edge (a late or early bus there may fall outside the
-window and never be seen), then missing headway, quadrant or weather. The
+window and never be seen), in a window that collection did not cover from
+start to end (same bias), then missing headway, quadrant or weather. The
 table is rebuilt from scratch on every run. docs/A2_FEATURE_DECISIONS.md
 explains each choice.
 """
@@ -106,6 +107,32 @@ def window_of(scheduled_arrival, windows=config.COLLECTION_WINDOWS,
         if clock_minutes(start) + margin <= minute <= clock_minutes(end) - margin:
             return name
     return None
+
+
+def covered_windows(conn, windows=config.COLLECTION_WINDOWS, names=config.WINDOW_NAMES,
+                    slack=config.WINDOW_COVERAGE_MINUTES):
+    """The (service date, window) pairs that collection covered from start to end.
+
+    A window that started late or stopped early is biased the same way as
+    its edges: only buses that ran late (or early) enough to fall inside the
+    collected part were seen. Covered = a stored ping within slack minutes of
+    the window's start and another within slack minutes of its end.
+
+    Returns:
+        Set of ("YYYY-MM-DD", window name) tuples.
+    """
+    stamps = pd.read_sql_query("SELECT timestamp FROM positions", conn)["timestamp"]
+    local = pd.to_datetime(stamps, unit="s", utc=True).dt.tz_convert(config.LOCAL_TIMEZONE)
+    pings = pd.DataFrame({"date": local.dt.strftime("%Y-%m-%d"),
+                          "minute": local.dt.hour * 60 + local.dt.minute})
+    covered = set()
+    for (start, end), name in zip(windows, names):
+        first, last = clock_minutes(start), clock_minutes(end)
+        inside = pings[(pings["minute"] >= first - slack) & (pings["minute"] <= last + slack)]
+        span = inside.groupby("date")["minute"].agg(["min", "max"])
+        full = span[(span["min"] <= first + slack) & (span["max"] >= last - slack)]
+        covered |= {(day, name) for day in full.index}
+    return covered
 
 
 def keep_rows(frame, mask, reason, dropped):
@@ -275,6 +302,11 @@ def build_features(conn):
     frame = frame.assign(window=frame["scheduled_arrival"].map(window_of))
     frame = keep_rows(frame, frame["window"].notna(),
                       "scheduled near a window edge", dropped)
+    covered = covered_windows(conn)
+    frame = keep_rows(frame, pd.Series([(day, window) in covered for day, window in
+                                        zip(frame["service_date"], frame["window"])],
+                                       index=frame.index, dtype=bool),
+                      "window not fully collected", dropped)
     quadrants = pd.read_sql_query(
         "SELECT route, stop_id, quadrant FROM stops", conn)
     frame = frame.merge(quadrants, on=["route", "stop_id"], how="left")

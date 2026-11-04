@@ -11,11 +11,20 @@ import sqlite3
 import pandas as pd
 import pytest
 
-from data_collection_setup.main import ARRIVALS_DDL, SCHEDULED_STOP_TIMES_DDL, STOPS_DDL
-from delay_features.main import build_features, day_type, delay_class, store_features, window_of
+from data_collection_setup.main import (ARRIVALS_DDL, POSITIONS_DDL, SCHEDULED_STOP_TIMES_DDL,
+                                        STOPS_DDL)
+from delay_features.main import (build_features, covered_windows, day_type, delay_class,
+                                  store_features, window_of)
 from weather_collection.main import WEATHER_DDL
 
 DAY = "2026-10-28"  # A Wednesday.
+
+
+def add_pings(conn, *clocks):
+    """Stores one position ping at each local "HH:MM" on DAY."""
+    for clock in clocks:
+        stamp = int(pd.Timestamp(DAY + " " + clock, tz="Australia/Adelaide").timestamp())
+        conn.execute("INSERT INTO positions (vehicle_id, timestamp) VALUES ('v1', ?)", (stamp,))
 
 
 def test_delay_class_bands():
@@ -45,8 +54,9 @@ def test_day_type():
 
 def make_db():
     conn = sqlite3.connect(":memory:")
-    for ddl in (ARRIVALS_DDL, SCHEDULED_STOP_TIMES_DDL, STOPS_DDL, WEATHER_DDL):
+    for ddl in (ARRIVALS_DDL, POSITIONS_DDL, SCHEDULED_STOP_TIMES_DDL, STOPS_DDL, WEATHER_DDL):
         conn.execute(ddl)
+    add_pings(conn, "06:59", "08:59")  # The 07-09 window was collected in full.
     conn.executemany(
         "INSERT INTO stops (route, stop_id, quadrant) VALUES (?, ?, ?)",
         [("G10", "S1", "N"), ("G10", "S2", "S")])
@@ -130,6 +140,24 @@ def test_headway_ignores_superseded_timetable_versions():
     assert rows.loc[("T1", "S1"), "headway_min"] == 10.0
     assert rows.loc[("T1", "S2"), "headway_min"] == 10.0
     assert dropped["no headway"] == 0
+
+
+def test_covered_windows_needs_pings_at_both_ends():
+    conn = make_db()
+    assert covered_windows(conn) == {(DAY, "am")}
+    conn.execute("DELETE FROM positions")
+    add_pings(conn, "06:59", "08:00")  # Collection stopped an hour early.
+    assert covered_windows(conn) == set()
+
+
+def test_rows_in_a_half_collected_window_are_dropped():
+    conn = make_db()
+    conn.execute("DELETE FROM positions")
+    add_pings(conn, "06:59", "08:00")
+    rows, dropped = build_features(conn)
+    assert rows.empty
+    assert dropped["window not fully collected"] == 4
+    assert sum(dropped.values()) == 8
 
 
 def test_store_features_replaces_the_table():
