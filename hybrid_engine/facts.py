@@ -1,5 +1,5 @@
-# Student Name: Tahzeeb Ahmed
-# Student FAN:  ahme0423
+# Student Name: Joel Bates
+# Student FAN:  bate0218
 # File:         hybrid_engine/facts.py
 # Date:         01-11-2026
 # Description:  Turns predicted bus rows into Prolog facts for reasoner/rules.pl.

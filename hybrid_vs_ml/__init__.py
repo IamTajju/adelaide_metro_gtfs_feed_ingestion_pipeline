@@ -1,5 +1,5 @@
-# Student Name: Tahzeeb Ahmed
-# Student FAN:  ahme0423
+# Student Name: Joel Bates
+# Student FAN:  bate0218
 # File:         hybrid_vs_ml/__init__.py
 # Date:         01-11-2026
 # Description:  A2: the hybrid (ML + Prolog rules) vs ML alone on the test days.
