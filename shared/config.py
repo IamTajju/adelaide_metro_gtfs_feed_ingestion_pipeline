@@ -102,3 +102,11 @@ WINDOW_NAMES = ["am", "midday", "pm"]
 # there is seen only if it ran early (end) or late (start) enough to stay
 # inside the window, which biases the labels.
 EDGE_MARGIN_MINUTES = 10
+
+# A2 delay model
+MODELS_DIR = ROOT / "models"  # model.joblib, metrics.json and the report tables/plots.
+TEST_DAYS = 3  # The last service dates, held out and scored once.
+CV_FOLDS = 5  # Date-grouped folds on the remaining days...
+FALLBACK_FOLDS = 3  # ...or this many when a fold would hold too few late rows.
+MIN_LATE_PER_FOLD = 5
+BOOTSTRAP_RESAMPLES = 1000  # For the test-set confidence intervals.
