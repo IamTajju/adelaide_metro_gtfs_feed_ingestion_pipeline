@@ -102,6 +102,10 @@ WINDOW_NAMES = ["am", "midday", "pm"]
 # there is seen only if it ran early (end) or late (start) enough to stay
 # inside the window, which biases the labels.
 EDGE_MARGIN_MINUTES = 10
+# A window counts only if collection covered it: a stored ping within this many
+# minutes of its start and of its end (drops a window that started late or
+# stopped early, e.g. the half-collected last day).
+WINDOW_COVERAGE_MINUTES = 5
 
 # A2 delay model
 MODELS_DIR = ROOT / "models"  # model.joblib, metrics.json and the report tables/plots.
@@ -110,3 +114,13 @@ CV_FOLDS = 5  # Date-grouped folds on the remaining days...
 FALLBACK_FOLDS = 3  # ...or this many when a fold would hold too few late rows.
 MIN_LATE_PER_FOLD = 5
 BOOTSTRAP_RESAMPLES = 1000  # For the test-set confidence intervals.
+
+# A2 hybrid reasoning (Prolog). Fixed before the test days are seen; not tuned.
+P_WARN = 1 / 3  # Warn early or late when its probability beats chance over 3 classes.
+CONF_MEDIUM = 0.5  # Without an operator estimate: medium if the top class has p >= this, else low.
+NEAR_STOPS = 3  # Live only: a bus this many stops away or fewer trusts the operator estimate.
+BUNCH_FRAC = 0.25  # Bunching: gap under this share of the scheduled headway.
+GAP_FRAC = 1.5  # Long gap: gap over this share of the scheduled headway.
+MIN_EVENTS = 10  # Fewer real bunching or long-gap events: report counts and cases, no precision/recall.
+QUERY_WITHIN_MINUTES = 60  # `ask status` looks this far ahead of the query time.
+HYBRID_VS_ML_DIR = ROOT / "reports" / "hybrid_vs_ml"  # make hybrid_vs_ml writes here.

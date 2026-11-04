@@ -9,7 +9,7 @@ SYSTEM_PYTHON = python3
 endif
 
 .PHONY: help install setup selection route_candidates route_selection stop_candidates stop_selection \
-	collect schedule arrivals weather check backup features test
+	collect schedule arrivals weather check backup features train hybrid_vs_ml test
 
 # Default target: list the commands (plain `make` downloads nothing).
 help:
@@ -27,7 +27,9 @@ help:
 	@echo "make check             rows stored per collection window yesterday (or DAY=YYYY-MM-DD)"
 	@echo "make backup            dated copy of data/gtfs.db in data/backups (or DEST=folder)"
 	@echo "make features          A2: rebuild the delay_features training table from data/gtfs.db"
-	@echo "make test              run the test suite"
+	@echo "make train             A2: compare the models and save the best to models/ (QUICK=1 for a dry run)"
+	@echo "make hybrid_vs_ml      A2: does adding the rules beat ML alone? test-day tables + cases to reports/hybrid_vs_ml/"
+	@echo "make test              run the test suite (Python and Prolog)"
 
 # Virtual environment with the pinned dependencies.
 install:
@@ -69,10 +71,6 @@ schedule:
 arrivals:
 	$(PYTHON) -m gtfs_position_collection.arrivals
 
-# A2: ML training table (one row per observed arrival); refreshes arrivals first.
-features: arrivals
-	$(PYTHON) -m delay_features
-
 # Stage 4: hourly weather for one day (default yesterday): make weather DAY=2026-10-07
 weather:
 	$(PYTHON) -m weather_collection $(DAY)
@@ -84,6 +82,18 @@ check:
 # Safe copy of the database while the collector runs: make backup DEST=/path/to/other/disk
 backup:
 	$(PYTHON) -m data_collection_setup.backup $(DEST)
+
+# A2: ML training table (one row per observed arrival); refreshes arrivals first.
+features: arrivals
+	$(PYTHON) -m delay_features
+
+# A2: train and compare the models on fresh features; QUICK=1 tries one setting per model.
+train: features
+	$(PYTHON) -m delay_model $(if $(QUICK),--quick)
+
+# A2: score what the Prolog rules add on the held-out days, using the saved model.
+hybrid_vs_ml:
+	$(PYTHON) -m hybrid_vs_ml
 
 test:
 	$(PYTHON) -m pytest tests

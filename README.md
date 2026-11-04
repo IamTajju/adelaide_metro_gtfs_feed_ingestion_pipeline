@@ -25,6 +25,7 @@ Stage 4  weather    Open-Meteo hourly weather for the collection hours          
 - **Internet access**: the timetable, Metrocard taps, live feed and weather are downloaded.
 - **About 200 MB of disk** for `data/` (timetable ≈ 80 MB, Metrocard taps ≈ 55 MB, plus the database).
 - Optional: the `sqlite3` command-line tool to look inside `data/gtfs.db`.
+- **SWI-Prolog** (`swipl`), for A2 only: the reasoning rules run in it. macOS: `brew install swi-prolog`. Linux: `sudo apt install swi-prolog`. Windows: the installer from swi-prolog.org.
 
 ## Install
 
@@ -70,6 +71,39 @@ Useful extras:
 - `python -m gtfs_position_collection --once`: one poll, ignoring the collection windows, to check the collector.
 - `python -m data_collection_setup --reset`: deletes `data/gtfs.db` and starts empty (wipes collected data).
 - Watch the collector: `tail -f data/logs/collector.log`.
+
+## A2: predict and reason
+
+Artefact 2 builds on the collected data. An ML model predicts whether a bus will be early, on time or late
+at a chosen stop. Prolog rules then turn that into a warning, a confidence level and an action, with the
+reasons. Run these after collection, from the repository root, in this order.
+
+| Step | make | python |
+|---|---|---|
+| 1. Build the training rows (refreshes arrivals first) | `make features` | `python -m delay_features` |
+| 2. Train and compare the models, save the best to `models/` (runs step 1 too) | `make train` (dry run: `make train QUICK=1`) | `python -m delay_model` |
+| 3. Does adding the rules beat ML alone? Scores the last 3 days, writes `reports/hybrid_vs_ml/` | `make hybrid_vs_ml` | `python -m hybrid_vs_ml` |
+| 4. Ask about a route at a stop at a past moment | — | `python -m hybrid_engine ask status G10 3474 --at "2026-10-30 08:10"` |
+| 5. Check a route for bunching and long gaps at a past moment (a stop is optional) | — | `python -m hybrid_engine ask bunching 106 --at "2026-10-30 16:30"` |
+
+Step 4 takes a stop id or the stop's full name, and only the chosen routes and stops. It prints each bus
+due in the next hour with its verdict, confidence, action and reasons, then what really happened.
+Step 5 checks consecutive buses at every chosen stop of the route, and says whether each flagged pair
+really bunched.
+For a fair check, ask about the last 3 days; the model trained on the others.
+Only past moments (`--at`) work for now: live mode is not built.
+
+The A2 modules:
+
+| Folder | Does |
+|---|---|
+| `delay_features/` | One training row per observed arrival: route, stop, quadrant, window, day type, headway, previous-stop delay, rain |
+| `delay_model/` | Trains baselines and three models, picks the best by log-loss; `scoring.py` holds the metrics |
+| `reasoner/` | The Prolog rules (`rules.pl`) and fixed tables (`kb.pl`); `test_rules.pl` tests them |
+| `hybrid_engine/` | Connects the two: picks the buses, gets the ML probabilities, runs the rules, prints the answer |
+| `hybrid_vs_ml/` | Compares the hybrid with ML alone on the test days: warnings, confidence, bunching, example cases |
+
+Design and decisions: `docs/A2_ARCHITECTURE.md` and `docs/A2_FEATURE_DECISIONS.md`.
 
 ## Running the collector unattended (macOS, Windows, Linux)
 
