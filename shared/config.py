@@ -1,13 +1,10 @@
-# Student Name: [Your Name]
-# Student FAN:  [YourFAN]
+# Student Name: Tahzeeb Ahmed
+# Student FAN:  ahme0423
 # File:         shared/config.py
 # Date:         26-09-2026
 # Description:  All URLs, paths, timers, CBD box and selection sizes.
 # Usage:        from shared import config
-"""All URLs, paths, timers, CBD box and selection sizes.
-
-TODO: rest of T01 (see docs/TICKETS.md).
-"""
+"""All URLs, paths, timers, CBD box and selection sizes."""
 
 from pathlib import Path
 

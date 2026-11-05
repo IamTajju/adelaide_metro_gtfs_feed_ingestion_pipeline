@@ -1,5 +1,5 @@
-# Student Name: [Your Name]
-# Student FAN:  [YourFAN]
+# Student Name: Tahzeeb Ahmed
+# Student FAN:  ahme0423
 # File:         shared/__init__.py
 # Date:         27-09-2026
 # Description:  Code shared by every stage: config, database and static timetable.

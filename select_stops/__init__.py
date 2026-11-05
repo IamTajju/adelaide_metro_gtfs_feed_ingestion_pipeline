@@ -1,5 +1,5 @@
-# Student Name: [Your Name]
-# Student FAN:  [YourFAN]
+# Student Name: Tahzeeb Ahmed
+# Student FAN:  ahme0423
 # File:         select_stops/__init__.py
 # Date:         27-09-2026
 # Description:  Stage 2: top-n CBD stops per chosen route with N/S/E/W coverage.

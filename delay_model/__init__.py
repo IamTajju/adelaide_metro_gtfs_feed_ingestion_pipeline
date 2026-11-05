@@ -1,4 +1,4 @@
-# Student Name: Mauro TUrci
+# Student Name: Mauro Turci
 # Student FAN:  turc0022
 # File:         delay_model/__init__.py
 # Date:         01-11-2026
